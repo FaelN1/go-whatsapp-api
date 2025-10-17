@@ -1,8 +1,22 @@
 # Go WhatsApp API
 
-Estrutura inicial de uma API REST para gerenciar instâncias WhatsApp via whatsmeow.
+API REST para gerenciamento de instâncias WhatsApp com **máxima compatibilidade com Evolution API v2**, construída em Go usando a biblioteca [whatsmeow](https://github.com/tulir/whatsmeow).
 
-## Rotas
+## 🎯 Objetivo
+
+Este projeto foi desenvolvido para ser **100% compatível com a Evolution API v2**, permitindo migração transparente de aplicações existentes. Todas as rotas, formatos de requisição/resposta e comportamentos foram implementados seguindo rigorosamente a especificação da Evolution API.
+
+### Diferenciais
+
+- ✅ **Compatibilidade total** com Evolution API v2
+- 🚀 **Performance superior** (Go nativo vs Node.js)
+- 📦 **Binário único** sem dependências externas (SQLite embarcado)
+- 🔒 **Type-safe** com validação em tempo de compilação
+- 🎨 **Arquitetura limpa** (DDD) com separação de responsabilidades
+- 📊 **Observabilidade** com logging estruturado via whatsmeow
+- 🔄 **Reconexão automática** e gerenciamento resiliente de sessões
+
+## 📋 Módulos e Arquitetura
 
 - POST /instances
 - GET /instances
