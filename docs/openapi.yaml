@@ -1,0 +1,2524 @@
+openapi: 3.1.0
+info:
+  title: Go WhatsApp API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Instances
+    description: Gerenciamento de instâncias WhatsApp
+  - name: Communities
+    description: Gerenciamento de comunidades WhatsApp
+  - name: Messages
+    description: Envio de mensagens
+  - name: Groups
+    description: Gerenciamento de grupos (Evolution API compatible)
+  - name: Profile Settings
+    description: Gerenciamento de perfil e configurações do usuário (Evolution API compatible)
+  - name: Webhook
+    description: Configuração de webhooks (Evolution API compatible)
+  - name: Settings
+    description: Ajustes de comportamento da instância (Evolution API compatible)
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Healthcheck
+      responses:
+        '200': { description: OK }
+  /instances:
+    get:
+      tags:
+        - Instances
+      summary: Listar instâncias
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Instance'
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+    post:
+      tags:
+        - Instances
+      summary: Criar instância
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInstance'
+      responses:
+        '201': { description: Criada }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+  /instances/{name}:
+    delete:
+      tags:
+        - Instances
+      summary: Deletar instância
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deletada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Details:
+                    type: string
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+  /instances/{name}/logout:
+    post:
+      tags:
+        - Instances
+      summary: Logout instância
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        '204': { description: Deslogada }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+  /instances/{name}/connect:
+    post:
+      tags:
+        - Instances
+      summary: Iniciar conexão ou recuperar evento QR
+      description: Retorna primeiro evento QR ("code"), status "pending" (202) ou "already_logged" se já autenticada. Opcionalmente gera pairing code para login por código.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: number
+          required: false
+          schema:
+            type: string
+          description: Número de telefone completo (DDI + DDD + número) usado para gerar o pairing code do WhatsApp.
+      responses:
+        '200':
+          description: Evento QR ou sessão já autenticada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InstanceConnectResponse' }
+              example:
+                status: code
+                code: '2@XXXXXXXXXXXX:YYYYYYYYYYYY'
+                pairingCode: WZYEH1YY
+                count: 1
+        '202':
+          description: Ainda aguardando QR/status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PendingResponse' }
+              example: { status: pending }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '409': { description: Cliente indisponível para gerar pairing code }
+        '500': { description: Erro interno }
+  /instances/{name}/disconnect:
+    post:
+      tags:
+        - Instances
+      summary: Desconectar instância (mantém sessão)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Desconectada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Details:
+                    type: string
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+  /webhook/set/{instance}:
+    post:
+      tags:
+        - Webhook
+      summary: Configurar webhook (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetWebhookRequest'
+      responses:
+        '201':
+          description: Webhook atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetWebhookResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+  /webhook/find/{instance}:
+    get:
+      tags:
+        - Webhook
+      summary: Recuperar configuração atual do webhook (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Configuração do webhook
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FindWebhookResponse'
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+  /settings/set/{instance}:
+    post:
+      tags:
+        - Settings
+      summary: Atualizar configurações da instância (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetSettingsRequest'
+      responses:
+        '201':
+          description: Configurações atualizadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetSettingsResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+  /settings/find/{instance}:
+    get:
+      tags:
+        - Settings
+      summary: Obter configurações atuais da instância (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Configurações atuais
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FindSettingsResponse'
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+  # /instances/{name}/qr removido
+  /instances/{name}/communities:
+    get:
+      tags:
+        - Communities
+      summary: Listar comunidades
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de comunidades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Community'
+        '403': { description: Acesso negado }
+    post:
+      tags:
+        - Communities
+      summary: Criar comunidade
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommunity'
+      responses:
+        '201':
+          description: Comunidade criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Community'
+        '403': { description: Acesso negado }
+  /instances/{name}/communities/{communityId}:
+    get:
+      tags:
+        - Communities
+      summary: Detalhar comunidade
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: communityId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Detalhes da comunidade
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Community'
+        '403': { description: Acesso negado }
+  /instances/{name}/communities/{communityId}/members:
+    get:
+      tags:
+        - Communities
+      summary: Listar membros da comunidade
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: communityId
+          required: true
+          schema:
+            type: string
+            description: JID da comunidade (codificado para URL)
+      responses:
+        '200':
+          description: Membros da comunidade
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommunityMember'
+        '403': { description: Acesso negado }
+  /instances/{name}/communities/{communityId}/members/count:
+    get:
+      tags:
+        - Communities
+      summary: Total de membros da comunidade
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: communityId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contagem de membros
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunityMemberCount'
+        '403': { description: Acesso negado }
+  /instances/{name}/communities/{communityId}/announce:
+    post:
+      tags:
+        - Communities
+      summary: Enviar anúncio para a comunidade
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: communityId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommunityAnnouncement'
+      responses:
+        '202':
+          description: Mensagem encaminhada para envio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '403': { description: Acesso negado }
+  /message/sendText/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar mensagem de texto (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendTextInput'
+      responses:
+        '200':
+          description: Mensagem enviada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /message/sendMedia/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar mídia (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMediaInput'
+      responses:
+        '200':
+          description: Mídia enviada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /message/sendStatus/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar status/story (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendStatusInput'
+      responses:
+        '200':
+          description: Status enviado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /message/sendWhatsAppAudio/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar áudio (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAudioInput'
+      responses:
+        '200':
+          description: Áudio enviado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /message/sendSticker/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar figurinha (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendStickerInput'
+      responses:
+        '200':
+          description: Figurinha enviada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /message/sendLocation/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar localização (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendLocationInput'
+      responses:
+        '201':
+          description: Localização enviada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /message/sendContact/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar contato (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendContactInput'
+      responses:
+        '201':
+          description: Contato enviado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /message/sendReaction/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar reação (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendReactionInput'
+      responses:
+        '201':
+          description: Reação enviada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /message/sendPoll/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar enquete (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendPollInput'
+      responses:
+        '201':
+          description: Enquete enviada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /message/sendList/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar lista (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendListInput'
+      responses:
+        '201':
+          description: Lista enviada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /message/sendButtons/{instance}:
+    post:
+      tags:
+        - Messages
+      summary: Enviar botões interativos (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendButtonInput'
+      responses:
+        '201':
+          description: Botões enviados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+        '401': { description: Não autorizado }
+        '500': { description: Erro no envio }
+  /group/create/{instance}:
+    post:
+      tags:
+        - Groups
+      summary: Criar grupo (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupRequest'
+      responses:
+        '201':
+          description: Grupo criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupEnvelope'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+        '409': { description: Cliente não conectado }
+        '502': { description: Erro ao criar grupo no WhatsApp }
+  /group/updateGroupPicture/{instance}:
+    post:
+      tags:
+        - Groups
+      summary: Atualizar foto do grupo (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGroupPictureRequest'
+      responses:
+        '200':
+          description: Foto atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupEnvelope'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '502': { description: Erro ao atualizar foto no WhatsApp }
+  /group/updateGroupDescription/{instance}:
+    post:
+      tags:
+        - Groups
+      summary: Atualizar descrição do grupo (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGroupDescriptionRequest'
+      responses:
+        '200':
+          description: Descrição atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupEnvelope'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '502': { description: Erro ao atualizar descrição no WhatsApp }
+  /group/fetchInviteCode/{instance}:
+    post:
+      tags:
+        - Groups
+      summary: Buscar código de convite do grupo (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      responses:
+        '200':
+          description: Código de convite recuperado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteCodeResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '502': { description: Erro ao buscar código no WhatsApp }
+  /group/revokeInviteCode/{instance}:
+    post:
+      tags:
+        - Groups
+      summary: Revogar código de convite do grupo (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      responses:
+        '200':
+          description: Código revogado e novo código gerado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteCodeResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '502': { description: Erro ao revogar código no WhatsApp }
+  /group/sendInviteUrl/{instance}:
+    post:
+      tags:
+        - Groups
+      summary: Enviar link de convite do grupo via mensagem (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendInviteRequest'
+      responses:
+        '200':
+          description: Convites enviados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendInviteResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '502': { description: Erro ao enviar convites }
+  /group/fetchAllGroups/{instance}:
+    get:
+      tags:
+        - Groups
+      summary: Buscar todos os grupos do usuário (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: getParticipants
+          required: true
+          schema:
+            type: boolean
+          description: Se deve incluir lista de participantes
+      responses:
+        '200':
+          description: Lista de grupos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Group'
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao buscar grupos }
+  /group/findGroupInfos/{instance}:
+    get:
+      tags:
+        - Groups
+      summary: Buscar informações de um grupo por JID (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      responses:
+        '200':
+          description: Informações do grupo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao buscar grupo }
+  /group/inviteInfo/{instance}:
+    get:
+      tags:
+        - Groups
+      summary: Buscar informações de um grupo por código de convite (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: inviteCode
+          required: true
+          schema:
+            type: string
+          description: Código do convite do grupo (ex. ABC123XYZ)
+      responses:
+        '200':
+          description: Informações do grupo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao buscar grupo }
+  /group/participants/{instance}:
+    get:
+      tags:
+        - Groups
+      summary: Buscar participantes de um grupo (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      responses:
+        '200':
+          description: Lista de participantes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FindParticipantsResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao buscar participantes }
+  /group/updateParticipant/{instance}:
+    post:
+      tags:
+        - Groups
+      summary: Adicionar, remover ou alterar permissões de participantes (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateParticipantRequest'
+      responses:
+        '200':
+          description: Participantes atualizados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupEnvelope'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '502': { description: Erro ao atualizar participantes no WhatsApp }
+  /group/updateSetting/{instance}:
+    post:
+      tags:
+        - Groups
+      summary: Atualizar configurações do grupo (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSettingRequest'
+      responses:
+        '200':
+          description: Configurações atualizadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupEnvelope'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '502': { description: Erro ao atualizar configurações no WhatsApp }
+  /group/toggleEphemeral/{instance}:
+    post:
+      tags:
+        - Groups
+      summary: Ativar/desativar mensagens efêmeras (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToggleEphemeralRequest'
+      responses:
+        '200':
+          description: Configuração de mensagens efêmeras atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupEnvelope'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '502': { description: Erro ao configurar mensagens efêmeras }
+  /group/leaveGroup/{instance}:
+    delete:
+      tags:
+        - Groups
+      summary: Sair de um grupo (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: groupJid
+          required: true
+          schema:
+            type: string
+          description: JID completo do grupo (ex. 123456@g.us)
+      responses:
+        '200':
+          description: Saiu do grupo com sucesso
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou grupo não encontrado }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao sair do grupo }
+  /chat/fetchProfile/{instance}:
+    post:
+      tags:
+        - Profile Settings
+      summary: Buscar perfil de usuário (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FetchProfileRequest'
+      responses:
+        '200':
+          description: Perfil do usuário
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou perfil não encontrado }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao buscar perfil }
+  /chat/fetchBusinessProfile/{instance}:
+    post:
+      tags:
+        - Profile Settings
+      summary: Buscar perfil de negócio (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FetchBusinessProfileRequest'
+      responses:
+        '200':
+          description: Perfil de negócio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessProfileResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou perfil não encontrado }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao buscar perfil de negócio }
+  /chat/updateProfileName/{instance}:
+    post:
+      tags:
+        - Profile Settings
+      summary: Atualizar nome do perfil (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileNameRequest'
+      responses:
+        '200':
+          description: Nome do perfil atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateProfileNameResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao atualizar nome do perfil }
+  /chat/updateProfileStatus/{instance}:
+    post:
+      tags:
+        - Profile Settings
+      summary: Atualizar status do perfil (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileStatusRequest'
+      responses:
+        '200':
+          description: Status do perfil atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateProfileStatusResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao atualizar status do perfil }
+  /chat/updateProfilePicture/{instance}:
+    post:
+      tags:
+        - Profile Settings
+      summary: Atualizar foto do perfil (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfilePictureRequest'
+      responses:
+        '200':
+          description: Foto do perfil atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateProfilePictureResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao atualizar foto do perfil }
+  /chat/removeProfilePicture/{instance}:
+    delete:
+      tags:
+        - Profile Settings
+      summary: Remover foto do perfil (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      responses:
+        '200':
+          description: Foto do perfil removida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemoveProfilePictureResponse'
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao remover foto do perfil }
+  /chat/fetchPrivacySettings/{instance}:
+    get:
+      tags:
+        - Profile Settings
+      summary: Buscar configurações de privacidade (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      responses:
+        '200':
+          description: Configurações de privacidade
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivacySettingsResponse'
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao buscar configurações }
+  /chat/updatePrivacySettings/{instance}:
+    post:
+      tags:
+        - Profile Settings
+      summary: Atualizar configurações de privacidade (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePrivacySettingsRequest'
+      responses:
+        '200':
+          description: Configurações de privacidade atualizadas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdatePrivacySettingsResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância não encontrada }
+        '409': { description: Cliente não conectado }
+        '500': { description: Erro ao atualizar configurações }
+  /messages/text:
+    post:
+      tags:
+        - Messages
+      summary: Enviar texto
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendText'
+      responses:
+        '202':
+          description: Aceito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendTextResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Token de autenticação Bearer. Pode ser:
+        - Token específico da instância (obtido ao criar a instância)
+        - Token master global (configurado via API_MASTER_TOKEN no .env)
+  schemas:
+    Instance:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        webhookUrl: { type: string, format: uri }
+        token: { type: string }
+        status: { type: string, enum: [pending_qr, connected, disconnected, logged_out, active] }
+        webhook:
+          $ref: '#/components/schemas/InstanceWebhookConfig'
+        settings:
+          $ref: '#/components/schemas/InstanceSettings'
+    InstanceSettings:
+      type: object
+      properties:
+        rejectCall: { type: boolean }
+        msgCall: { type: string }
+        groupsIgnore: { type: boolean }
+        alwaysOnline: { type: boolean }
+        readMessages: { type: boolean }
+        readStatus: { type: boolean }
+        syncFullHistory: { type: boolean }
+    InstanceWebhookConfig:
+      type: object
+      properties:
+        url: { type: string, format: uri }
+        events:
+          type: array
+          items: { type: string }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        enabled: { type: boolean }
+        byEvents: { type: boolean }
+        base64: { type: boolean }
+    SetWebhookRequest:
+      type: object
+      required: [enabled, url, webhookByEvents, webhookBase64, events]
+      properties:
+        enabled: { type: boolean }
+        url: { type: string, format: uri }
+        webhookByEvents: { type: boolean }
+        webhookBase64: { type: boolean }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        events:
+          type: array
+          minItems: 1
+          items: { type: string }
+    SetWebhookResponse:
+      type: object
+      properties:
+        webhook:
+          type: object
+          properties:
+            instanceName: { type: string }
+            webhook:
+              type: object
+              properties:
+                url: { type: string, format: uri }
+                events:
+                  type: array
+                  items: { type: string }
+                headers:
+                  type: object
+                  additionalProperties: { type: string }
+                enabled: { type: boolean }
+                webhookByEvents: { type: boolean }
+                webhookBase64: { type: boolean }
+    FindWebhookResponse:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        url: { type: string, format: uri }
+        events:
+          type: array
+          items: { type: string }
+        webhookByEvents: { type: boolean }
+        webhookBase64: { type: boolean }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+    SetSettingsRequest:
+      type: object
+      required: [rejectCall, msgCall, groupsIgnore, alwaysOnline, readMessages, readStatus, syncFullHistory]
+      properties:
+        rejectCall: { type: boolean }
+        msgCall: { type: string }
+        groupsIgnore: { type: boolean }
+        alwaysOnline: { type: boolean }
+        readMessages: { type: boolean }
+        readStatus: { type: boolean }
+        syncFullHistory: { type: boolean }
+    SetSettingsResponse:
+      type: object
+      properties:
+        settings:
+          type: object
+          properties:
+            instanceName: { type: string }
+            settings:
+              type: object
+              properties:
+                reject_call: { type: boolean }
+                msg_call: { type: string }
+                groups_ignore: { type: boolean }
+                always_online: { type: boolean }
+                read_messages: { type: boolean }
+                read_status: { type: boolean }
+                sync_full_history: { type: boolean }
+    FindSettingsResponse:
+      type: object
+      properties:
+        reject_call: { type: boolean }
+        msg_call: { type: string }
+        groups_ignore: { type: boolean }
+        always_online: { type: boolean }
+        read_messages: { type: boolean }
+        read_status: { type: boolean }
+        sync_full_history: { type: boolean }
+    CreateInstance:
+      type: object
+      required: [instanceName, webhookUrl, token]
+      properties:
+        instanceName: { type: string }
+        webhookUrl: { type: string, format: uri }
+        token: { type: string }
+    SendText:
+      type: object
+      required: [instanceId, to, text]
+      properties:
+        instanceId: { type: string }
+        to: { type: string }
+        text: { type: string }
+    InstanceConnectResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: "Status atual do processo de pareamento (ex.: code, already_logged, success)."
+        pairingCode:
+          type: string
+          description: "Código alfanumérico de 8 caracteres usado para pareamento por código."
+        code:
+          type: string
+          description: "Código bruto (2@...) utilizado para gerar o QR atual."
+        link:
+          type: string
+          description: "URL com o QR armazenado quando armazenamento externo estiver configurado."
+        count:
+          type: integer
+          description: "Número sequencial do código retornado (inicia em 1)."
+        timeoutSeconds:
+          type: integer
+          description: "Tempo estimado até a expiração do código atual."
+        message:
+          type: string
+          description: "Mensagem adicional, quando aplicável (ex.: motivo de timeout)."
+    PendingResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pending]
+    Community:
+      type: object
+      required: [jid, name, created_at, is_locked, is_announcement_only, member_count]
+      properties:
+        jid: { type: string }
+        name: { type: string }
+        description: { type: string }
+        announcement_jid: { type: string }
+        default_subgroup_jid: { type: string }
+        created_at:
+          type: string
+          format: date-time
+        is_locked: { type: boolean }
+        is_announcement_only: { type: boolean }
+        member_count: { type: integer }
+    CreateCommunity:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        image:
+          type: string
+          description: Imagem JPEG em base64 ou data URI
+        participants:
+          type: array
+          items: { type: string }
+    CommunityMember:
+      type: object
+      required: [jid, is_admin]
+      properties:
+        jid: { type: string }
+        phone:
+          type: string
+          description: Número de telefone em formato internacional quando disponível
+        is_admin: { type: boolean }
+        display_name: { type: string }
+    CommunityMemberCount:
+      type: object
+      required: [count]
+      properties:
+        count: { type: integer }
+    CommunityAnnouncement:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: Mensagem em modo anúncio
+    SendTextResponse:
+      type: object
+      required: [key, pushName, status, messageType, messageTimestamp, instanceId, source]
+      properties:
+        key:
+          type: object
+          required: [remoteJid, fromMe, id]
+          properties:
+            remoteJid: { type: string }
+            fromMe: { type: boolean }
+            id: { type: string }
+        pushName: { type: string }
+        status: { type: string }
+        message:
+          type: object
+          properties:
+            conversation: { type: string }
+        messageType: { type: string }
+        messageTimestamp:
+          type: integer
+          format: int64
+        instanceId: { type: string }
+        source: { type: string }
+    SendTextInput:
+      type: object
+      required: [number, text]
+      properties:
+        number:
+          type: string
+          description: Número do destinatário em formato internacional (ex. 5511999999999)
+        text:
+          type: string
+          description: Texto da mensagem
+        delay:
+          type: integer
+          description: Delay em milissegundos antes de enviar
+        linkPreview:
+          type: boolean
+          description: Se deve mostrar preview de links
+        mentionsEveryOne:
+          type: boolean
+          description: Mencionar todos no grupo
+        mentioned:
+          type: array
+          items:
+            type: string
+          description: Lista de JIDs para mencionar
+        quoted:
+          type: object
+          description: Mensagem para responder/citar
+          properties:
+            key:
+              type: object
+              properties:
+                remoteJid: { type: string }
+                fromMe: { type: boolean }
+                id: { type: string }
+            message:
+              type: object
+    SendMediaInput:
+      type: object
+      required: [number, mediatype, media]
+      properties:
+        number:
+          type: string
+          description: Número do destinatário
+        mediatype:
+          type: string
+          enum: [image, video, document, audio]
+          description: Tipo de mídia
+        mimetype:
+          type: string
+          description: MIME type (ex. image/jpeg)
+        caption:
+          type: string
+          description: Legenda da mídia
+        media:
+          type: string
+          description: URL da mídia ou base64
+        fileName:
+          type: string
+          description: Nome do arquivo
+        delay:
+          type: integer
+          description: Delay em milissegundos
+        linkPreview:
+          type: boolean
+        mentionsEveryOne:
+          type: boolean
+        mentioned:
+          type: array
+          items:
+            type: string
+        quoted:
+          type: object
+          properties:
+            key:
+              type: object
+            message:
+              type: object
+    SendStatusInput:
+      type: object
+      required: [type, content, allContacts]
+      properties:
+        type:
+          type: string
+          enum: [text, image, audio]
+          description: Tipo do status
+        content:
+          type: string
+          description: Conteúdo do status (texto, URL ou base64)
+        caption:
+          type: string
+          description: Legenda para imagem/áudio
+        backgroundColor:
+          type: string
+          description: Cor de fundo para status de texto (hex)
+        font:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Fonte para status de texto (1-5)
+        allContacts:
+          type: boolean
+          description: Se deve enviar para todos os contatos
+        statusJidList:
+          type: array
+          items:
+            type: string
+          description: Lista específica de JIDs para receber o status
+    SendAudioInput:
+      type: object
+      required: [number, audio]
+      properties:
+        number:
+          type: string
+          description: Número do destinatário
+        audio:
+          type: string
+          description: URL ou base64 do áudio
+        mimetype:
+          type: string
+          description: MIME type (ex. audio/ogg)
+        ptt:
+          type: boolean
+          description: Indica se é PTT (áudio rápido)
+        delay:
+          type: integer
+          description: Delay em milissegundos
+        linkPreview:
+          type: boolean
+        mentionsEveryOne:
+          type: boolean
+        mentioned:
+          type: array
+          items:
+            type: string
+        quoted:
+          type: object
+          properties:
+            key:
+              type: object
+            message:
+              type: object
+    SendStickerInput:
+      type: object
+      required: [number, sticker]
+      properties:
+        number:
+          type: string
+          description: Número do destinatário
+        sticker:
+          type: string
+          description: URL ou base64 da figurinha
+        delay:
+          type: integer
+        linkPreview:
+          type: boolean
+        mentionsEveryOne:
+          type: boolean
+        mentioned:
+          type: array
+          items:
+            type: string
+        quoted:
+          type: object
+          properties:
+            key:
+              type: object
+            message:
+              type: object
+    SendLocationInput:
+      type: object
+      required: [number, name, address, latitude, longitude]
+      properties:
+        number:
+          type: string
+          description: Número do destinatário
+        name:
+          type: string
+          description: Nome do local
+        address:
+          type: string
+          description: Endereço formatado
+        latitude:
+          type: number
+          format: float
+        longitude:
+          type: number
+          format: float
+        delay:
+          type: integer
+        linkPreview:
+          type: boolean
+        mentionsEveryOne:
+          type: boolean
+        mentioned:
+          type: array
+          items:
+            type: string
+        quoted:
+          type: object
+          properties:
+            key:
+              type: object
+            message:
+              type: object
+    ContactEntry:
+      type: object
+      properties:
+        fullName: { type: string }
+        wuid: { type: string }
+        phoneNumber: { type: string }
+        organization: { type: string }
+        email: { type: string }
+        url: { type: string, format: uri }
+    SendContactInput:
+      type: object
+      required: [number, contact]
+      properties:
+        number:
+          type: string
+          description: Número do destinatário
+        contact:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ContactEntry'
+        delay:
+          type: integer
+          description: Delay em milissegundos
+    SendReactionInput:
+      type: object
+      required: [key, reaction]
+      properties:
+        key:
+          type: object
+          required: [remoteJid, fromMe, id]
+          properties:
+            remoteJid: { type: string }
+            fromMe: { type: boolean }
+            id: { type: string }
+        reaction:
+          type: string
+          description: Emoji da reação
+        delay:
+          type: integer
+          description: Delay em milissegundos
+    SendPollInput:
+      type: object
+      required: [number, name, selectableCount, values]
+      properties:
+        number:
+          type: string
+        name:
+          type: string
+          description: Texto principal da enquete
+        selectableCount:
+          type: integer
+          description: Quantidade de opções selecionáveis
+        values:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        delay:
+          type: integer
+        linkPreview:
+          type: boolean
+        mentionsEveryOne:
+          type: boolean
+        mentioned:
+          type: array
+          items:
+            type: string
+        quoted:
+          type: object
+          properties:
+            key:
+              type: object
+            message:
+              type: object
+    ListRow:
+      type: object
+      required: [title, rowId]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        rowId: { type: string }
+    ListSection:
+      type: object
+      required: [title, rows]
+      properties:
+        title: { type: string }
+        rows:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ListRow'
+    SendListInput:
+      type: object
+      required: [number, title, description, buttonText, footerText, values]
+      properties:
+        number:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        buttonText:
+          type: string
+        footerText:
+          type: string
+        values:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ListSection'
+        delay:
+          type: integer
+        linkPreview:
+          type: boolean
+        mentionsEveryOne:
+          type: boolean
+        mentioned:
+          type: array
+          items:
+            type: string
+        quoted:
+          type: object
+          properties:
+            key:
+              type: object
+            message:
+              type: object
+    ButtonOption:
+      type: object
+      required: [title, displayText, id]
+      properties:
+        title: { type: string }
+        displayText: { type: string }
+        id: { type: string }
+    SendButtonInput:
+      type: object
+      required: [number, title, description, footer, buttons]
+      properties:
+        number:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        footer:
+          type: string
+        buttons:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ButtonOption'
+        delay:
+          type: integer
+        linkPreview:
+          type: boolean
+        mentionsEveryOne:
+          type: boolean
+        mentioned:
+          type: array
+          items:
+            type: string
+        quoted:
+          type: object
+          properties:
+            key:
+              type: object
+            message:
+              type: object
+    GroupEnvelope:
+      type: object
+      properties:
+        group:
+          $ref: '#/components/schemas/Group'
+    Group:
+      type: object
+      required: [id, subject, size, restrict, announce, isCommunity, isCommunityAnnounce]
+      properties:
+        id:
+          type: string
+          description: JID completo do grupo
+        subject:
+          type: string
+        subjectOwner:
+          type: string
+          description: JID do usuario que alterou o assunto
+        subjectTime:
+          type: string
+          format: date-time
+        pictureUrl:
+          type: string
+          format: uri
+          description: URL atual da foto do grupo
+        size:
+          type: integer
+          description: Quantidade de participantes conhecidos
+        creation:
+          type: string
+          format: date-time
+        owner:
+          type: string
+          description: JID do proprietario do grupo
+        desc:
+          type: string
+          description: Descricao atual do grupo
+        descId:
+          type: string
+          description: Identificador interno da descricao
+        restrict:
+          type: boolean
+        announce:
+          type: boolean
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupParticipant'
+        isCommunity:
+          type: boolean
+        isCommunityAnnounce:
+          type: boolean
+        linkedParent:
+          type: string
+          description: JID da comunidade vinculada
+    GroupParticipant:
+      type: object
+      required: [id, isAdmin, isSuperAdmin]
+      properties:
+        id:
+          type: string
+          description: JID principal do participante
+        phone:
+          type: string
+          description: Numero internacional do participante
+        isAdmin:
+          type: boolean
+        isSuperAdmin:
+          type: boolean
+        displayName:
+          type: string
+        error:
+          type: integer
+          description: Codigo de erro retornado ao adicionar participante
+    CreateGroupRequest:
+      type: object
+      required: [subject, participants]
+      properties:
+        subject:
+          type: string
+          description: Assunto do grupo (maximo 25 caracteres)
+        description:
+          type: string
+          description: Descricao inicial do grupo
+        participants:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Lista de numeros com DDI ou JIDs completos
+        promoteParticipants:
+          type: boolean
+          description: Promove todos os participantes adicionados a administradores
+        profilePicture:
+          type: string
+          description: URL ou base64 (data URI) da imagem do grupo
+    UpdateGroupPictureRequest:
+      type: object
+      required: [image]
+      properties:
+        image:
+          type: string
+          description: URL ou base64 (data URI) da nova foto do grupo
+    UpdateGroupDescriptionRequest:
+      type: object
+      required: [description]
+      properties:
+        description:
+          type: string
+          description: Nova descricao do grupo
+    InviteCodeResponse:
+      type: object
+      required: [inviteUrl, inviteCode]
+      properties:
+        inviteUrl:
+          type: string
+          format: uri
+          description: URL completa do convite (ex. https://chat.whatsapp.com/ABC123)
+        inviteCode:
+          type: string
+          description: Código extraído do convite (ex. ABC123)
+    SendInviteRequest:
+      type: object
+      required: [numbers, description, caption]
+      properties:
+        numbers:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Lista de números com DDI ou JIDs completos para receber o convite
+        description:
+          type: string
+          description: Texto descritivo do convite
+        caption:
+          type: string
+          description: Legenda adicional da mensagem de convite
+    SendInviteResponse:
+      type: object
+      required: [sent]
+      properties:
+        sent:
+          type: array
+          items:
+            type: object
+            required: [number, status]
+            properties:
+              number:
+                type: string
+                description: Número ou JID do destinatário
+              status:
+                type: string
+                enum: [success, error]
+                description: Status do envio para este destinatário
+              messageId:
+                type: string
+                description: ID da mensagem enviada (presente quando status é success)
+              error:
+                type: string
+                description: Descrição do erro (presente quando status é error)
+    FindParticipantsResponse:
+      type: object
+      required: [participants]
+      properties:
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupParticipant'
+    UpdateParticipantRequest:
+      type: object
+      required: [action, participants]
+      properties:
+        action:
+          type: string
+          enum: [add, remove, promote, demote]
+          description: Ação a ser executada nos participantes
+        participants:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Lista de números com DDI ou JIDs completos
+    UpdateSettingRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [announcement, not_announcement, locked, unlocked]
+          description: |
+            Configuração do grupo:
+            - announcement: apenas admins podem enviar mensagens
+            - not_announcement: todos podem enviar mensagens
+            - locked: apenas admins podem editar configurações
+            - unlocked: todos podem editar configurações
+    ToggleEphemeralRequest:
+      type: object
+      required: [expiration]
+      properties:
+        expiration:
+          type: integer
+          description: |
+            Tempo de expiração das mensagens em segundos.
+            Use 0 para desativar mensagens efêmeras.
+            Valores comuns: 86400 (24h), 604800 (7d), 7776000 (90d)
+    FetchProfileRequest:
+      type: object
+      required: [number]
+      properties:
+        number:
+          type: string
+          description: Número de telefone com código de país (ex. 5511999999999)
+    FetchBusinessProfileRequest:
+      type: object
+      required: [number]
+      properties:
+        number:
+          type: string
+          description: Número de telefone com código de país (ex. 5511999999999)
+    UpdateProfileNameRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Novo nome para o perfil
+    ProfileResponse:
+      type: object
+      properties:
+        wid:
+          type: string
+          description: WhatsApp ID completo do usuário
+        name:
+          type: string
+          description: Nome do usuário
+        pictureUrl:
+          type: string
+          format: uri
+          description: URL da foto de perfil
+        status:
+          type: string
+          description: Mensagem de status do usuário
+    BusinessProfileResponse:
+      type: object
+      properties:
+        wid:
+          type: string
+          description: WhatsApp ID completo do negócio
+        name:
+          type: string
+          description: Nome do negócio
+        description:
+          type: string
+          description: Descrição do negócio
+        category:
+          type: string
+          description: Categoria do negócio
+        email:
+          type: string
+          format: email
+          description: Email do negócio
+        website:
+          type: string
+          format: uri
+          description: Website do negócio
+        address:
+          type: string
+          description: Endereço do negócio
+        pictureUrl:
+          type: string
+          format: uri
+          description: URL da foto de perfil do negócio
+    UpdateProfileNameResponse:
+      type: object
+      required: [update]
+      properties:
+        update:
+          type: string
+          description: Status da atualização (ex. success)
+    UpdateProfileStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: Nova mensagem de status do perfil
+    UpdateProfileStatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: Confirmação da atualização (ex. success)
+    UpdateProfilePictureRequest:
+      type: object
+      required: [picture]
+      properties:
+        picture:
+          type: string
+          description: URL da imagem ou base64 (data URI) para a nova foto do perfil
+    UpdateProfilePictureResponse:
+      type: object
+      required: [profilePictureUrl]
+      properties:
+        profilePictureUrl:
+          type: string
+          description: Confirmação da atualização (ex. success)
+    RemoveProfilePictureResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: Confirmação da remoção (ex. success)
+    PrivacySettingsResponse:
+      type: object
+      properties:
+        readreceipts:
+          type: string
+          enum: [all, none, undefined]
+          description: Configuração de confirmações de leitura
+        profile:
+          type: string
+          enum: [all, contacts, contact_blacklist, none, undefined]
+          description: Quem pode ver a foto do perfil
+        status:
+          type: string
+          enum: [all, contacts, contact_blacklist, none, undefined]
+          description: Quem pode ver o status
+        online:
+          type: string
+          enum: [all, match_last_seen, undefined]
+          description: Quem pode ver quando está online
+        last:
+          type: string
+          enum: [all, contacts, contact_blacklist, none, undefined]
+          description: Quem pode ver visto por último
+        groupadd:
+          type: string
+          enum: [all, contacts, contact_blacklist, undefined]
+          description: Quem pode adicionar a grupos
+    UpdatePrivacySettingsRequest:
+      type: object
+      properties:
+        readreceipts:
+          type: string
+          enum: [all, none]
+          description: Configuração de confirmações de leitura
+        profile:
+          type: string
+          enum: [all, contacts, contact_blacklist, none]
+          description: Quem pode ver a foto do perfil
+        status:
+          type: string
+          enum: [all, contacts, contact_blacklist, none]
+          description: Quem pode ver o status
+        online:
+          type: string
+          enum: [all, match_last_seen]
+          description: Quem pode ver quando está online
+        last:
+          type: string
+          enum: [all, contacts, contact_blacklist, none]
+          description: Quem pode ver visto por último
+        groupadd:
+          type: string
+          enum: [all, contacts, contact_blacklist]
+          description: Quem pode adicionar a grupos
+    UpdatePrivacySettingsResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: Confirmação da atualização (ex. success)
+
+
+
