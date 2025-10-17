@@ -1,10 +1,15 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"
+	"image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"strings"
@@ -570,30 +575,48 @@ func parseJID(raw string) (types.JID, error) {
 
 const maxCommunityImageBytes = 5 * 1024 * 1024
 
-var errCommunityImageTooLarge = errors.New("community image exceeds 5MB limit")
+var (
+	errCommunityImageTooLarge = errors.New("community image exceeds 5MB limit")
+	errCommunityImageInvalid  = errors.New("community image is not a valid image")
+)
 
 func decodeImage(ctx context.Context, encoded string) ([]byte, error) {
 	source := strings.TrimSpace(encoded)
 	if source == "" {
 		return nil, nil
 	}
+	var (
+		data   []byte
+		err    error
+		remote bool
+	)
 	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
-		return downloadImage(ctx, source)
-	}
-	if idx := strings.Index(source, ","); idx >= 0 {
-		source = source[idx+1:]
-	}
-	data, err := base64.StdEncoding.DecodeString(source)
-	if err != nil {
-		data, err = base64.RawStdEncoding.DecodeString(source)
+		remote = true
+		data, err = downloadImage(ctx, source)
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		if idx := strings.Index(source, ","); idx >= 0 {
+			source = source[idx+1:]
+		}
+		data, err = base64.StdEncoding.DecodeString(source)
+		if err != nil {
+			data, err = base64.RawStdEncoding.DecodeString(source)
+			if err != nil {
+				return nil, fmt.Errorf("invalid image payload: %w", err)
+			}
+		}
 	}
-	if len(data) > maxCommunityImageBytes {
-		return nil, errCommunityImageTooLarge
+
+	normalized, err := normalizeCommunityImage(data)
+	if err != nil {
+		if remote {
+			return nil, err
+		}
+		return nil, fmt.Errorf("invalid image payload: %w", err)
 	}
-	return data, nil
+	return normalized, nil
 }
 
 func downloadImage(ctx context.Context, url string) ([]byte, error) {
@@ -628,4 +651,27 @@ func readAllLimitedCommunity(r io.Reader, limit int) ([]byte, error) {
 		return nil, errCommunityImageTooLarge
 	}
 	return data, nil
+}
+
+func normalizeCommunityImage(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, errCommunityImageInvalid
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, errCommunityImageInvalid
+	}
+
+	for quality := 90; quality >= 50; quality -= 5 {
+		var buf bytes.Buffer
+		if encodeErr := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); encodeErr != nil {
+			return nil, fmt.Errorf("failed to encode community image: %w", encodeErr)
+		}
+		if buf.Len() <= maxCommunityImageBytes {
+			return buf.Bytes(), nil
+		}
+	}
+
+	return nil, errCommunityImageTooLarge
 }
