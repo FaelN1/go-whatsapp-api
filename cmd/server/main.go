@@ -54,8 +54,9 @@ func main() {
 	}
 
 	var (
-		repo    repositories.InstanceRepository
-		dbClose func() error
+		repo           repositories.InstanceRepository
+		membershipRepo repositories.CommunityMembershipRepository
+		dbClose        func() error
 	)
 
 	switch cfg.DBDriver {
@@ -71,9 +72,17 @@ func main() {
 			log.Fatalf("repository initialization error: %v", err)
 		}
 		repo = pgRepo
+		membershipRepo, err = repositories.NewPostgresCommunityMembershipRepo(db)
+		if err != nil {
+			log.Fatalf("membership repository initialization error: %v", err)
+		}
 	default:
 		log.Printf("initializing in-memory repository")
 		repo = repositories.NewInMemoryInstanceRepo()
+		membershipRepo = repositories.NewInMemoryCommunityMembershipRepo()
+	}
+	if membershipRepo == nil {
+		membershipRepo = repositories.NewInMemoryCommunityMembershipRepo()
 	}
 
 	if dbClose != nil {
@@ -92,7 +101,7 @@ func main() {
 
 	instanceSvc := services.NewInstanceService(repo, waMgr, objectStorage)
 	messageSvc := services.NewMessageService(waMgr, objectStorage)
-	communitySvc := services.NewCommunityService(waMgr, messageSvc)
+	communitySvc := services.NewCommunityService(waMgr, messageSvc, membershipRepo)
 	groupSvc := services.NewGroupService(waMgr)
 	profileSvc := services.NewProfileService(waMgr)
 

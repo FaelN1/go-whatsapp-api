@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/faeln1/go-whatsapp-api/internal/app/services"
 	"github.com/faeln1/go-whatsapp-api/internal/domain/community"
@@ -73,18 +74,36 @@ func (c *CommunityController) ListMembers(w http.ResponseWriter, r *http.Request
 }
 
 func (c *CommunityController) SendAnnouncement(w http.ResponseWriter, r *http.Request, instance, communityID string) {
-	jid := decodePathSegment(communityID)
 	var in community.SendAnnouncementInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	msg, err := c.service.SendAnnouncement(r.Context(), instance, jid, in.Text)
+	targets := make([]string, 0, 1+len(in.Communities))
+	primary := decodePathSegment(communityID)
+	if strings.TrimSpace(primary) != "" {
+		targets = append(targets, primary)
+	}
+	if len(in.Communities) > 0 {
+		for _, raw := range in.Communities {
+			decoded := decodePathSegment(raw)
+			if strings.TrimSpace(decoded) == "" {
+				continue
+			}
+			targets = append(targets, decoded)
+		}
+	}
+	in.Communities = nil
+	results, err := c.service.SendAnnouncement(r.Context(), instance, targets, in)
 	if err != nil {
 		writeError(w, mapCommunityStatus(err), err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, msg)
+	if len(results) == 1 {
+		writeJSON(w, http.StatusAccepted, results[0].Message)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, results)
 }
 
 func decodePathSegment(raw string) string {

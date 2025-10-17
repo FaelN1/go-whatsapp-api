@@ -5,10 +5,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/faeln1/go-whatsapp-api/internal/app/repositories"
 	"github.com/faeln1/go-whatsapp-api/internal/domain/community"
 	"github.com/faeln1/go-whatsapp-api/internal/domain/message"
 	"github.com/faeln1/go-whatsapp-api/internal/platform/whatsapp"
@@ -17,11 +20,12 @@ import (
 )
 
 var (
-	errInstanceNotFound   = errors.New("instance not found")
-	errClientNotReady     = errors.New("instance client not ready")
-	errClientNotConnected = errors.New("instance not connected")
-	errCommunityNameEmpty = errors.New("community name is required")
-	errAnnouncementEmpty  = errors.New("announcement text is required")
+	errInstanceNotFound      = errors.New("instance not found")
+	errClientNotReady        = errors.New("instance client not ready")
+	errClientNotConnected    = errors.New("instance not connected")
+	errCommunityNameEmpty    = errors.New("community name is required")
+	errAnnouncementEmpty     = errors.New("announcement text is required")
+	errAnnouncementNoTargets = errors.New("no target communities provided")
 	// ErrCommunityAccessDenied is returned when the account does not have access to the target community.
 	ErrCommunityAccessDenied = errors.New("community access denied")
 )
@@ -38,25 +42,34 @@ type CommunityService interface {
 	Get(ctx context.Context, instanceID, communityJID string) (*community.Community, error)
 	List(ctx context.Context, instanceID string) ([]community.Community, error)
 	CountMembers(ctx context.Context, instanceID, communityJID string) (int, error)
-	ListMembers(ctx context.Context, instanceID, communityJID string) ([]community.Member, error)
-	SendAnnouncement(ctx context.Context, instanceID, communityJID, text string) (message.SendTextOutput, error)
+	ListMembers(ctx context.Context, instanceID, communityJID string) (community.Members, error)
+	SendAnnouncement(ctx context.Context, instanceID string, communityIDs []string, in community.SendAnnouncementInput) ([]AnnouncementResult, error)
+}
+
+// AnnouncementResult captures the dispatch outcome for a single community announcement.
+type AnnouncementResult struct {
+	CommunityJID string                 `json:"communityJid"`
+	TargetJID    string                 `json:"targetJid"`
+	Message      message.SendTextOutput `json:"message"`
 }
 
 type communityService struct {
-	waMgr         *whatsapp.Manager
-	msgSvc        MessageService
-	cacheMu       sync.RWMutex
-	subGroupCache map[string]subGroupCacheEntry
-	cacheTTL      time.Duration
+	waMgr          *whatsapp.Manager
+	msgSvc         MessageService
+	membershipRepo repositories.CommunityMembershipRepository
+	cacheMu        sync.RWMutex
+	subGroupCache  map[string]subGroupCacheEntry
+	cacheTTL       time.Duration
 }
 
 // NewCommunityService assembles the community service with the required dependencies.
-func NewCommunityService(waMgr *whatsapp.Manager, msgSvc MessageService) CommunityService {
+func NewCommunityService(waMgr *whatsapp.Manager, msgSvc MessageService, membershipRepo repositories.CommunityMembershipRepository) CommunityService {
 	return &communityService{
-		waMgr:         waMgr,
-		msgSvc:        msgSvc,
-		subGroupCache: make(map[string]subGroupCacheEntry),
-		cacheTTL:      time.Minute,
+		waMgr:          waMgr,
+		msgSvc:         msgSvc,
+		membershipRepo: membershipRepo,
+		subGroupCache:  make(map[string]subGroupCacheEntry),
+		cacheTTL:       time.Minute,
 	}
 }
 
@@ -97,7 +110,7 @@ func (s *communityService) Create(ctx context.Context, instanceID string, in com
 	}
 
 	if img := strings.TrimSpace(in.Image); img != "" {
-		if data, err := decodeImage(img); err != nil {
+		if data, err := decodeImage(ctx, img); err != nil {
 			return nil, fmt.Errorf("invalid image payload: %w", err)
 		} else if len(data) > 0 {
 			if _, err := sess.Client.SetGroupPhoto(info.JID, data); err != nil {
@@ -192,58 +205,105 @@ func (s *communityService) CountMembers(ctx context.Context, instanceID, communi
 	return len(info.Participants), nil
 }
 
-func (s *communityService) ListMembers(ctx context.Context, instanceID, communityJID string) ([]community.Member, error) {
+func (s *communityService) ListMembers(ctx context.Context, instanceID, communityJID string) (community.Members, error) {
+	var empty community.Members
+
 	sess, err := s.readySession(instanceID)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 	jid, err := parseJID(communityJID)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
 	info, err := sess.Client.GetGroupInfo(jid)
 	if err != nil {
 		if errors.Is(err, whatsmeow.ErrNotInGroup) {
-			return nil, ErrCommunityAccessDenied
+			return empty, ErrCommunityAccessDenied
 		}
-		return nil, err
+		return empty, err
 	}
+
+	current := make([]community.Member, 0)
 	if info.IsParent {
 		participants, err := sess.Client.GetLinkedGroupsParticipants(info.JID)
 		if err != nil {
 			if errors.Is(err, whatsmeow.ErrNotInGroup) {
-				return nil, ErrCommunityAccessDenied
+				return empty, ErrCommunityAccessDenied
 			}
-			return nil, err
+			return empty, err
 		}
-		members := make([]community.Member, 0, len(participants))
-		for _, p := range participants {
-			jidStr, phone := s.resolveMemberContact(ctx, sess.Client, p)
-			members = append(members, community.Member{JID: jidStr, Phone: phone})
+		current = make([]community.Member, 0, len(participants))
+		for _, participant := range participants {
+			jidStr, phone := s.resolveMemberContact(ctx, sess.Client, participant)
+			current = append(current, community.Member{JID: jidStr, Phone: phone})
 		}
-		return members, nil
+	} else {
+		current = make([]community.Member, 0, len(info.Participants))
+		for _, part := range info.Participants {
+			jidStr := part.JID.String()
+			phone := ""
+			if !part.PhoneNumber.IsEmpty() {
+				jidStr = part.PhoneNumber.String()
+				phone = part.PhoneNumber.User
+			} else {
+				jidStr, phone = s.resolveMemberContact(ctx, sess.Client, part.JID)
+			}
+			if phone == "" && part.JID.Server == types.DefaultUserServer {
+				phone = part.JID.User
+			}
+			current = append(current, community.Member{
+				JID:         jidStr,
+				Phone:       phone,
+				IsAdmin:     part.IsAdmin,
+				DisplayName: strings.TrimSpace(part.DisplayName),
+			})
+		}
 	}
-	members := make([]community.Member, 0, len(info.Participants))
-	for _, part := range info.Participants {
-		jidStr := part.JID.String()
-		phone := ""
-		if !part.PhoneNumber.IsEmpty() {
-			jidStr = part.PhoneNumber.String()
-			phone = part.PhoneNumber.User
-		} else {
-			jidStr, phone = s.resolveMemberContact(ctx, sess.Client, part.JID)
-		}
-		if phone == "" && part.JID.Server == types.DefaultUserServer {
-			phone = part.JID.User
-		}
-		members = append(members, community.Member{
-			JID:         jidStr,
-			Phone:       phone,
-			IsAdmin:     part.IsAdmin,
-			DisplayName: part.DisplayName,
+
+	if s.membershipRepo == nil {
+		return community.Members{Current: current}, nil
+	}
+
+	snapshot, err := s.membershipRepo.ReconcileMembers(ctx, instanceID, jid.String(), current)
+	if err != nil {
+		return empty, err
+	}
+
+	result := community.Members{
+		Current: make([]community.Member, 0, len(snapshot.Active)),
+		Former:  make([]community.FormerMember, 0, len(snapshot.Former)),
+	}
+
+	for _, rec := range snapshot.Active {
+		result.Current = append(result.Current, community.Member{
+			JID:         rec.JID,
+			Phone:       rec.Phone,
+			IsAdmin:     rec.IsAdmin,
+			DisplayName: strings.TrimSpace(rec.DisplayName),
+			FirstSeen:   rec.FirstSeen,
+			LastSeen:    rec.LastSeen,
 		})
 	}
-	return members, nil
+
+	for _, rec := range snapshot.Former {
+		if rec.LeftAt == nil {
+			continue
+		}
+		result.Former = append(result.Former, community.FormerMember{
+			Member: community.Member{
+				JID:         rec.JID,
+				Phone:       rec.Phone,
+				IsAdmin:     rec.IsAdmin,
+				DisplayName: strings.TrimSpace(rec.DisplayName),
+				FirstSeen:   rec.FirstSeen,
+				LastSeen:    rec.LastSeen,
+			},
+			LeftAt: rec.LeftAt.UTC(),
+		})
+	}
+
+	return result, nil
 }
 
 func (s *communityService) resolveMemberContact(ctx context.Context, client *whatsmeow.Client, member types.JID) (string, string) {
@@ -261,20 +321,81 @@ func (s *communityService) resolveMemberContact(ctx context.Context, client *wha
 	return member.String(), ""
 }
 
-func (s *communityService) SendAnnouncement(ctx context.Context, instanceID, communityJID, text string) (message.SendTextOutput, error) {
-	if strings.TrimSpace(text) == "" {
-		return message.SendTextOutput{}, errAnnouncementEmpty
+func (s *communityService) SendAnnouncement(ctx context.Context, instanceID string, communityIDs []string, in community.SendAnnouncementInput) ([]AnnouncementResult, error) {
+	combinedIDs := make([]string, 0, len(communityIDs)+len(in.Communities))
+	combinedIDs = append(combinedIDs, communityIDs...)
+	if len(in.Communities) > 0 {
+		combinedIDs = append(combinedIDs, in.Communities...)
 	}
+
 	sess, err := s.readySession(instanceID)
 	if err != nil {
-		return message.SendTextOutput{}, err
+		return nil, err
 	}
-	jid, err := parseJID(communityJID)
+
+	targetCommunities, err := s.prepareAnnouncementTargets(combinedIDs)
 	if err != nil {
-		return message.SendTextOutput{}, err
+		return nil, err
 	}
-	target := s.resolveAnnouncementTarget(sess.Client, jid)
-	return s.msgSvc.SendText(ctx, message.SendTextInput{InstanceID: instanceID, To: target.String(), Text: text})
+
+	mediaPayload := strings.TrimSpace(in.Media)
+	hasMedia := mediaPayload != ""
+	text := strings.TrimSpace(in.Text)
+	caption := strings.TrimSpace(in.Caption)
+	if hasMedia {
+		if caption == "" {
+			caption = text
+		}
+	} else if text == "" {
+		return nil, errAnnouncementEmpty
+	}
+
+	results := make([]AnnouncementResult, 0, len(targetCommunities))
+	for _, communityJID := range targetCommunities {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		target := s.resolveAnnouncementTarget(sess.Client, communityJID)
+		if hasMedia {
+			msg, err := s.msgSvc.SendMedia(ctx, message.SendMediaInput{
+				InstanceID: instanceID,
+				To:         target.String(),
+				MediaType:  strings.TrimSpace(in.MediaType),
+				MimeType:   strings.TrimSpace(in.MimeType),
+				Caption:    caption,
+				Media:      mediaPayload,
+				FileName:   strings.TrimSpace(in.FileName),
+			})
+			if err != nil {
+				return nil, err
+			}
+			results = append(results, AnnouncementResult{
+				CommunityJID: communityJID.String(),
+				TargetJID:    target.String(),
+				Message:      msg,
+			})
+			continue
+		}
+
+		msg, err := s.msgSvc.SendText(ctx, message.SendTextInput{
+			InstanceID: instanceID,
+			To:         target.String(),
+			Text:       text,
+		})
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, AnnouncementResult{
+			CommunityJID: communityJID.String(),
+			TargetJID:    target.String(),
+			Message:      msg,
+		})
+	}
+
+	return results, nil
 }
 
 func (s *communityService) readySession(instanceID string) (*whatsapp.Session, error) {
@@ -372,6 +493,31 @@ func (s *communityService) resolveAnnouncementTarget(client *whatsmeow.Client, c
 	return community
 }
 
+func (s *communityService) prepareAnnouncementTargets(rawIDs []string) ([]types.JID, error) {
+	seen := make(map[string]struct{})
+	ordered := make([]types.JID, 0, len(rawIDs))
+	for _, item := range rawIDs {
+		clean := strings.TrimSpace(item)
+		if clean == "" {
+			continue
+		}
+		jid, err := parseJID(clean)
+		if err != nil {
+			return nil, err
+		}
+		key := jid.String()
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		ordered = append(ordered, jid)
+	}
+	if len(ordered) == 0 {
+		return nil, errAnnouncementNoTargets
+	}
+	return ordered, nil
+}
+
 func toCommunity(info *types.GroupInfo, memberCount int, announcement, defaultSub types.JID) community.Community {
 	if info == nil {
 		return community.Community{}
@@ -414,21 +560,64 @@ func parseJID(raw string) (types.JID, error) {
 	return types.NewJID(digits.String(), types.DefaultUserServer), nil
 }
 
-func decodeImage(encoded string) ([]byte, error) {
-	idx := strings.Index(encoded, ",")
-	if idx >= 0 {
-		encoded = encoded[idx+1:]
-	}
-	encoded = strings.TrimSpace(encoded)
-	if encoded == "" {
+const maxCommunityImageBytes = 5 * 1024 * 1024
+
+var errCommunityImageTooLarge = errors.New("community image exceeds 5MB limit")
+
+func decodeImage(ctx context.Context, encoded string) ([]byte, error) {
+	source := strings.TrimSpace(encoded)
+	if source == "" {
 		return nil, nil
 	}
-	data, err := base64.StdEncoding.DecodeString(encoded)
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+		return downloadImage(ctx, source)
+	}
+	if idx := strings.Index(source, ","); idx >= 0 {
+		source = source[idx+1:]
+	}
+	data, err := base64.StdEncoding.DecodeString(source)
 	if err != nil {
-		data, err = base64.RawStdEncoding.DecodeString(encoded)
+		data, err = base64.RawStdEncoding.DecodeString(source)
 		if err != nil {
 			return nil, err
 		}
+	}
+	if len(data) > maxCommunityImageBytes {
+		return nil, errCommunityImageTooLarge
+	}
+	return data, nil
+}
+
+func downloadImage(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create image request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download image: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, fmt.Errorf("image download returned status %d", resp.StatusCode)
+	}
+	if resp.ContentLength > 0 && resp.ContentLength > int64(maxCommunityImageBytes) {
+		return nil, errCommunityImageTooLarge
+	}
+	data, err := readAllLimitedCommunity(resp.Body, maxCommunityImageBytes)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func readAllLimitedCommunity(r io.Reader, limit int) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > limit {
+		return nil, errCommunityImageTooLarge
 	}
 	return data, nil
 }

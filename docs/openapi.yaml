@@ -378,9 +378,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CommunityMember'
+                $ref: '#/components/schemas/CommunityMembers'
         '403': { description: Acesso negado }
   /instances/{name}/communities/{communityId}/members/count:
     get:
@@ -412,7 +410,8 @@ paths:
     post:
       tags:
         - Communities
-      summary: Enviar anúncio para a comunidade
+      summary: Enviar anúncio para uma ou mais comunidades
+      description: Permite encaminhar mensagens de anúncio em lote, incluindo texto simples ou mídias (imagem, documento, vídeo ou áudio).
       security:
         - bearerAuth: []
       parameters:
@@ -438,7 +437,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SendTextResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/SendTextResponse'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/CommunityAnnouncementResult'
         '403': { description: Acesso negado }
   /message/sendText/{instance}:
     post:
@@ -1737,6 +1740,36 @@ components:
           description: Número de telefone em formato internacional quando disponível
         is_admin: { type: boolean }
         display_name: { type: string }
+        first_seen:
+          type: string
+          format: date-time
+          description: Instante em que o membro foi observado pela primeira vez
+        last_seen:
+          type: string
+          format: date-time
+          description: Instante da última observação do membro como participante
+    FormerCommunityMember:
+      allOf:
+        - $ref: '#/components/schemas/CommunityMember'
+        - type: object
+          required: [left_at]
+          properties:
+            left_at:
+              type: string
+              format: date-time
+              description: Momento em que o membro saiu ou foi removido
+    CommunityMembers:
+      type: object
+      required: [current]
+      properties:
+        current:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommunityMember'
+        former:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormerCommunityMember'
     CommunityMemberCount:
       type: object
       required: [count]
@@ -1744,11 +1777,39 @@ components:
         count: { type: integer }
     CommunityAnnouncement:
       type: object
-      required: [text]
+      description: Informe "text" quando não houver mídia. Para envios com mídia, utilize "media" (base64, data URI ou URL pública) e "caption" opcional.
       properties:
         text:
           type: string
-          description: Mensagem em modo anúncio
+          description: Mensagem em modo anúncio quando não há mídia anexada
+        caption:
+          type: string
+          description: Legenda exibida junto à mídia
+        media:
+          type: string
+          description: Conteúdo em base64, data URI ou URL https acessível publicamente
+        mediaType:
+          type: string
+          description: Força o tipo de mensagem quando não for possível inferir pelo mimeType/extensão
+          enum: [image, video, audio, document]
+        mimeType:
+          type: string
+          description: "MIME type do arquivo enviado (ex.: application/pdf)"
+        fileName:
+          type: string
+          description: Nome exibido para documentos
+        communities:
+          type: array
+          description: Lista adicional de comunidades para envio simultâneo (JIDs codificados em URL)
+          items: { type: string }
+    CommunityAnnouncementResult:
+      type: object
+      required: [communityJid, targetJid, message]
+      properties:
+        communityJid: { type: string }
+        targetJid: { type: string }
+        message:
+          $ref: '#/components/schemas/SendTextResponse'
     SendTextResponse:
       type: object
       required: [key, pushName, status, messageType, messageTimestamp, instanceId, source]
