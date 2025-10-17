@@ -3,7 +3,7 @@ info:
   title: Go WhatsApp API
   version: 0.1.0
 servers:
-  - url: http://localhost:8080
+  - url: https://spinoza.folhetodigital.online
 tags:
   - name: Health
     description: Health check endpoints
