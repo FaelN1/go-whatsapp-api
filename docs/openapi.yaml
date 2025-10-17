@@ -443,6 +443,45 @@ paths:
                     items:
                       $ref: '#/components/schemas/CommunityAnnouncementResult'
         '403': { description: Acesso negado }
+  /community/inviteCode/{instance}:
+    post:
+      tags:
+        - Communities
+      summary: Buscar link de convite da comunidade (Evolution API compatible)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instance
+          required: true
+          schema:
+            type: string
+          description: Nome da instância WhatsApp
+        - in: query
+          name: communityJid
+          required: true
+          schema:
+            type: string
+          description: JID completo da comunidade (ex. 123456@g.us)
+        - in: query
+          name: reset
+          required: false
+          schema:
+            type: boolean
+          description: Quando true, revoga o link atual e gera um novo
+      responses:
+        '200':
+          description: Link de convite recuperado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteCodeResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Token inválido }
+        '404': { description: Instância ou comunidade não encontrada }
+        '409': { description: Cliente não conectado }
+        '502': { description: Erro ao buscar link no WhatsApp }
   /message/sendText/{instance}:
     post:
       tags:

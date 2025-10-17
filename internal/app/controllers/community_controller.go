@@ -73,6 +73,34 @@ func (c *CommunityController) ListMembers(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, members)
 }
 
+func (c *CommunityController) InviteCode(w http.ResponseWriter, r *http.Request, instance string) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	jid := strings.TrimSpace(r.URL.Query().Get("communityJid"))
+	if jid == "" {
+		jid = strings.TrimSpace(r.URL.Query().Get("communityJID"))
+	}
+	if jid == "" {
+		writeError(w, http.StatusBadRequest, ErrInvalidParam)
+		return
+	}
+
+	reset := false
+	if v := strings.TrimSpace(r.URL.Query().Get("reset")); v != "" {
+		reset = strings.EqualFold(v, "true") || v == "1"
+	}
+
+	resp, err := c.service.FetchInvite(r.Context(), instance, jid, reset)
+	if err != nil {
+		writeError(w, mapCommunityStatus(err), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (c *CommunityController) SendAnnouncement(w http.ResponseWriter, r *http.Request, instance, communityID string) {
 	var in community.SendAnnouncementInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -119,6 +147,8 @@ func mapCommunityStatus(err error) int {
 	switch {
 	case errors.Is(err, services.ErrCommunityAccessDenied):
 		return http.StatusForbidden
+	case errors.Is(err, services.ErrCommunityInviteLink):
+		return http.StatusBadGateway
 	default:
 		return http.StatusBadRequest
 	}

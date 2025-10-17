@@ -45,6 +45,12 @@ type Members struct {
 	Former  []FormerMember `json:"former,omitempty"`
 }
 
+// InviteResponse encapsulates the invite URL and code for a community.
+type InviteResponse struct {
+	InviteURL  string `json:"inviteUrl"`
+	InviteCode string `json:"inviteCode"`
+}
+
 // SendAnnouncementInput carries the request body to broadcast an announcement to one or more community announcement groups.
 type SendAnnouncementInput struct {
 	Text        string   `json:"text,omitempty"`

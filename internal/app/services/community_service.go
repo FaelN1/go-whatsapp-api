@@ -33,6 +33,8 @@ var (
 	errAnnouncementNoTargets = errors.New("no target communities provided")
 	// ErrCommunityAccessDenied is returned when the account does not have access to the target community.
 	ErrCommunityAccessDenied = errors.New("community access denied")
+	// ErrCommunityInviteLink is returned when WhatsApp refuses to provide or reset the invite link.
+	ErrCommunityInviteLink = errors.New("failed to fetch community invite link")
 )
 
 type subGroupCacheEntry struct {
@@ -49,6 +51,7 @@ type CommunityService interface {
 	CountMembers(ctx context.Context, instanceID, communityJID string) (int, error)
 	ListMembers(ctx context.Context, instanceID, communityJID string) (community.Members, error)
 	SendAnnouncement(ctx context.Context, instanceID string, communityIDs []string, in community.SendAnnouncementInput) ([]AnnouncementResult, error)
+	FetchInvite(ctx context.Context, instanceID, communityJID string, reset bool) (community.InviteResponse, error)
 }
 
 // AnnouncementResult captures the dispatch outcome for a single community announcement.
@@ -317,6 +320,34 @@ func (s *communityService) ListMembers(ctx context.Context, instanceID, communit
 	}
 
 	return result, nil
+}
+
+func (s *communityService) FetchInvite(ctx context.Context, instanceID, communityJID string, reset bool) (community.InviteResponse, error) {
+	var out community.InviteResponse
+
+	sess, err := s.readySession(instanceID)
+	if err != nil {
+		return out, err
+	}
+
+	jid, err := parseJID(communityJID)
+	if err != nil {
+		return out, err
+	}
+
+	link, err := sess.Client.GetGroupInviteLink(jid, reset)
+	if err != nil {
+		return out, fmt.Errorf("%w: %v", ErrCommunityInviteLink, err)
+	}
+
+	code := extractInviteCode(link)
+	if code == "" {
+		return out, ErrCommunityInviteLink
+	}
+
+	out.InviteURL = link
+	out.InviteCode = code
+	return out, nil
 }
 
 func (s *communityService) resolveMemberContact(ctx context.Context, client *whatsmeow.Client, member types.JID) (string, string) {

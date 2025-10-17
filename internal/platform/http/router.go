@@ -512,6 +512,27 @@ func NewRouter(cfg RouterConfig) stdhttp.Handler {
 
 	mux.Handle("/message/", authenticatedMessages)
 
+	if cfg.CommunityCtrl != nil {
+		communityMux := stdhttp.NewServeMux()
+		communityMux.HandleFunc("/community/inviteCode/", func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+			if r.Method != stdhttp.MethodPost {
+				w.WriteHeader(stdhttp.StatusMethodNotAllowed)
+				return
+			}
+			instanceName := strings.Trim(strings.TrimPrefix(r.URL.Path, "/community/inviteCode/"), "/")
+			if instanceName == "" {
+				w.WriteHeader(stdhttp.StatusBadRequest)
+				return
+			}
+			if !authorizeInstance(w, r, instanceName) {
+				return
+			}
+			cfg.CommunityCtrl.InviteCode(w, r, instanceName)
+		})
+
+		mux.Handle("/community/", communityMux)
+	}
+
 	if cfg.GroupCtrl != nil {
 		groupMux := stdhttp.NewServeMux()
 		handleGroup := func(prefix string, handler func(stdhttp.ResponseWriter, *stdhttp.Request, string)) stdhttp.HandlerFunc {
