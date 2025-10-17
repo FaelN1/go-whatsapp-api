@@ -73,17 +73,14 @@ func (c *CommunityController) ListMembers(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, members)
 }
 
-func (c *CommunityController) InviteCode(w http.ResponseWriter, r *http.Request, instance string) {
+func (c *CommunityController) InviteCode(w http.ResponseWriter, r *http.Request, instance, communityID string) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
-	jid := strings.TrimSpace(r.URL.Query().Get("communityJid"))
-	if jid == "" {
-		jid = strings.TrimSpace(r.URL.Query().Get("communityJID"))
-	}
-	if jid == "" {
+	jid := decodePathSegment(communityID)
+	if strings.TrimSpace(jid) == "" {
 		writeError(w, http.StatusBadRequest, ErrInvalidParam)
 		return
 	}
