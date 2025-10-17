@@ -241,13 +241,21 @@ func (s *communityService) ListMembers(ctx context.Context, instanceID, communit
 	} else {
 		current = make([]community.Member, 0, len(info.Participants))
 		for _, part := range info.Participants {
-			jidStr := part.JID.String()
+			jidStr := strings.TrimSpace(part.JID.String())
 			phone := ""
 			if !part.PhoneNumber.IsEmpty() {
-				jidStr = part.PhoneNumber.String()
-				phone = part.PhoneNumber.User
+				if resolved := strings.TrimSpace(part.PhoneNumber.String()); resolved != "" {
+					jidStr = resolved
+				}
+				phone = strings.TrimSpace(part.PhoneNumber.User)
 			} else {
-				jidStr, phone = s.resolveMemberContact(ctx, sess.Client, part.JID)
+				resolvedJID, resolvedPhone := s.resolveMemberContact(ctx, sess.Client, part.JID)
+				if trimmed := strings.TrimSpace(resolvedJID); trimmed != "" {
+					jidStr = trimmed
+				}
+				if phone == "" {
+					phone = strings.TrimSpace(resolvedPhone)
+				}
 			}
 			if phone == "" && part.JID.Server == types.DefaultUserServer {
 				phone = part.JID.User

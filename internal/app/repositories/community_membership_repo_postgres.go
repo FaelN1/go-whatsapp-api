@@ -48,7 +48,7 @@ func (r *postgresCommunityMembershipRepo) ensureSchema() error {
 func (r *postgresCommunityMembershipRepo) ReconcileMembers(ctx context.Context, instanceID, communityJID string, members []community.Member) (*CommunityMembershipSnapshot, error) {
 	trimmed := make(map[string]community.Member)
 	for _, member := range members {
-		id := strings.TrimSpace(member.JID)
+		id := strings.ToLower(strings.TrimSpace(member.JID))
 		if id == "" {
 			continue
 		}
@@ -76,6 +76,7 @@ func (r *postgresCommunityMembershipRepo) ReconcileMembers(ctx context.Context, 
 	defer tx.Rollback()
 
 	existing := make(map[string]struct {
+		rawID  string
 		leftAt *time.Time
 	})
 
@@ -96,11 +97,18 @@ func (r *postgresCommunityMembershipRepo) ReconcileMembers(ctx context.Context, 
 			rows.Close()
 			return nil, err
 		}
+		key := strings.ToLower(strings.TrimSpace(memberID))
 		if leftAt.Valid {
 			t := leftAt.Time.UTC()
-			existing[memberID] = struct{ leftAt *time.Time }{leftAt: &t}
+			existing[key] = struct {
+				rawID  string
+				leftAt *time.Time
+			}{rawID: memberID, leftAt: &t}
 		} else {
-			existing[memberID] = struct{ leftAt *time.Time }{leftAt: nil}
+			existing[key] = struct {
+				rawID  string
+				leftAt *time.Time
+			}{rawID: memberID, leftAt: nil}
 		}
 	}
 	rows.Close()
@@ -111,7 +119,7 @@ func (r *postgresCommunityMembershipRepo) ReconcileMembers(ctx context.Context, 
 	now := time.Now().UTC()
 
 	for id, member := range trimmed {
-		if _, ok := existing[id]; ok {
+		if rec, ok := existing[id]; ok {
 			if _, err := tx.ExecContext(ctx, `
                 UPDATE community_members
                 SET phone = $1,
@@ -126,7 +134,7 @@ func (r *postgresCommunityMembershipRepo) ReconcileMembers(ctx context.Context, 
 				now,
 				instanceID,
 				communityJID,
-				id,
+				rec.rawID,
 			); err != nil {
 				return nil, err
 			}
@@ -154,7 +162,7 @@ func (r *postgresCommunityMembershipRepo) ReconcileMembers(ctx context.Context, 
 		}
 	}
 
-	for id, rec := range existing {
+	for _, rec := range existing {
 		if rec.leftAt != nil {
 			continue
 		}
@@ -166,7 +174,7 @@ func (r *postgresCommunityMembershipRepo) ReconcileMembers(ctx context.Context, 
 			now,
 			instanceID,
 			communityJID,
-			id,
+			rec.rawID,
 		); err != nil {
 			return nil, err
 		}

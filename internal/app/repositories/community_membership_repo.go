@@ -59,10 +59,11 @@ func (r *memoryCommunityMembershipRepo) ReconcileMembers(ctx context.Context, in
 
 	trimmed := make(map[string]community.Member)
 	for _, member := range members {
-		id := strings.TrimSpace(member.JID)
+		id := strings.ToLower(strings.TrimSpace(member.JID))
 		if id == "" {
 			continue
 		}
+		member.JID = id
 		existing, ok := trimmed[id]
 		if !ok {
 			trimmed[id] = member
