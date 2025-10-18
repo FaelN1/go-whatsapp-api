@@ -711,28 +711,70 @@ func normalizeCommunityImage(data []byte) ([]byte, error) {
 		return nil, errCommunityImageInvalid
 	}
 
-	// Verify it's a valid image by attempting to decode
-	img, format, err := image.Decode(bytes.NewReader(data))
+	// Decode the image (supports JPEG, PNG, GIF)
+	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errCommunityImageInvalid, err)
 	}
 
-	// If already JPEG and within size limit, return as-is
-	if format == "jpeg" && len(data) <= maxCommunityImageBytes {
-		return data, nil
+	// WhatsApp has strict requirements for group/community photos
+	// We need to resize and re-encode to ensure compatibility
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Resize if image is larger than 640x640 (WhatsApp's preferred max dimension)
+	maxDimension := 640
+	if width > maxDimension || height > maxDimension {
+		img = resizeImage(img, maxDimension)
 	}
 
-	// Re-encode as JPEG with progressive quality reduction if needed
-	for quality := 90; quality >= 50; quality -= 10 {
+	// Always re-encode to clean JPEG format compatible with WhatsApp
+	// WhatsApp requires clean JPEG without EXIF/ICC profiles/specific subsampling
+	// Start with high quality and reduce if necessary
+	for quality := 90; quality >= 60; quality -= 5 {
 		var buf bytes.Buffer
 		if encodeErr := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); encodeErr != nil {
 			return nil, fmt.Errorf("failed to encode community image: %w", encodeErr)
 		}
 		result := buf.Bytes()
+
+		// Check if within size limit
 		if len(result) <= maxCommunityImageBytes {
 			return result, nil
 		}
 	}
 
 	return nil, errCommunityImageTooLarge
+}
+
+// resizeImage resizes an image to fit within maxDimension while maintaining aspect ratio
+func resizeImage(src image.Image, maxDimension int) image.Image {
+	bounds := src.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Calculate new dimensions maintaining aspect ratio
+	var newWidth, newHeight int
+	if width > height {
+		newWidth = maxDimension
+		newHeight = (height * maxDimension) / width
+	} else {
+		newHeight = maxDimension
+		newWidth = (width * maxDimension) / height
+	}
+
+	// Create new image with calculated dimensions
+	dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+
+	// Simple nearest-neighbor scaling
+	for y := 0; y < newHeight; y++ {
+		for x := 0; x < newWidth; x++ {
+			srcX := (x * width) / newWidth
+			srcY := (y * height) / newHeight
+			dst.Set(x, y, src.At(bounds.Min.X+srcX, bounds.Min.Y+srcY))
+		}
+	}
+
+	return dst
 }
