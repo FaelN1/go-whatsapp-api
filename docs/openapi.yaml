@@ -1951,131 +1951,124 @@ components:
               type: object
     SendStatusInput:
       type: object
-      required: [type, content, allContacts]
+      required: [statusMessage]
       properties:
-        type:
-          type: string
-          enum: [text, image, audio]
-          description: Tipo do status
-        content:
-          type: string
-          description: Conteúdo do status (texto, URL ou base64)
-        caption:
-          type: string
-          description: Legenda para imagem/áudio
-        backgroundColor:
-          type: string
-          description: Cor de fundo para status de texto (hex)
-        font:
-          type: integer
-          minimum: 1
-          maximum: 5
-          description: Fonte para status de texto (1-5)
-        allContacts:
-          type: boolean
-          description: Se deve enviar para todos os contatos
-        statusJidList:
-          type: array
-          items:
-            type: string
-          description: Lista específica de JIDs para receber o status
+        statusMessage:
+          type: object
+          required: [type, content, allContacts]
+          properties:
+            type:
+              type: string
+              enum: [text, image, video, audio]
+              description: Tipo do status
+            content:
+              type: string
+              description: Conteúdo do status (texto, URL ou base64)
+            caption:
+              type: string
+              description: Legenda para mídia
+            backgroundColor:
+              type: string
+              description: Cor de fundo para status de texto (hex, ex. "#FF5733")
+            font:
+              type: integer
+              minimum: 0
+              maximum: 5
+              description: Fonte para status de texto (0-5)
+            allContacts:
+              type: boolean
+              description: Se deve enviar para todos os contatos
+            statusJidList:
+              type: array
+              items:
+                type: string
+              description: Lista específica de JIDs para receber o status
     SendAudioInput:
       type: object
-      required: [number, audio]
+      required: [number, audioMessage]
       properties:
         number:
           type: string
-          description: Número do destinatário
-        audio:
-          type: string
-          description: URL ou base64 do áudio
-        mimetype:
-          type: string
-          description: MIME type (ex. audio/ogg)
-        ptt:
-          type: boolean
-          description: Indica se é PTT (áudio rápido)
-        delay:
-          type: integer
-          description: Delay em milissegundos
-        linkPreview:
-          type: boolean
-        mentionsEveryOne:
-          type: boolean
-        mentioned:
-          type: array
-          items:
-            type: string
-        quoted:
+          description: Número do destinatário (com código do país)
+        audioMessage:
+          type: object
+          required: [audio]
+          properties:
+            audio:
+              type: string
+              description: URL ou base64 do áudio
+        options:
           type: object
           properties:
-            key:
-              type: object
-            message:
-              type: object
+            delay:
+              type: integer
+              description: Delay em milissegundos
+            presence:
+              type: string
+              enum: [recording, composing]
+              description: Estado de presença durante o envio
+            encoding:
+              type: boolean
+              description: Se true, converte para PTT (voice message)
     SendStickerInput:
       type: object
-      required: [number, sticker]
+      required: [number, stickerMessage]
       properties:
         number:
           type: string
-          description: Número do destinatário
-        sticker:
-          type: string
-          description: URL ou base64 da figurinha
-        delay:
-          type: integer
-        linkPreview:
-          type: boolean
-        mentionsEveryOne:
-          type: boolean
-        mentioned:
-          type: array
-          items:
-            type: string
-        quoted:
+          description: Número do destinatário (com código do país)
+        stickerMessage:
+          type: object
+          required: [image]
+          properties:
+            image:
+              type: string
+              description: URL ou base64 da imagem da figurinha (preferencialmente WebP)
+        options:
           type: object
           properties:
-            key:
-              type: object
-            message:
-              type: object
+            delay:
+              type: integer
+              description: Delay em milissegundos
+            presence:
+              type: string
+              enum: [composing, recording]
+              description: Estado de presença durante o envio
     SendLocationInput:
       type: object
-      required: [number, name, address, latitude, longitude]
+      required: [number, locationMessage]
       properties:
         number:
           type: string
-          description: Número do destinatário
-        name:
-          type: string
-          description: Nome do local
-        address:
-          type: string
-          description: Endereço formatado
-        latitude:
-          type: number
-          format: float
-        longitude:
-          type: number
-          format: float
-        delay:
-          type: integer
-        linkPreview:
-          type: boolean
-        mentionsEveryOne:
-          type: boolean
-        mentioned:
-          type: array
-          items:
-            type: string
-        quoted:
+          description: Número do destinatário (com código do país)
+        locationMessage:
+          type: object
+          required: [name, address, latitude, longitude]
+          properties:
+            name:
+              type: string
+              description: Nome do local
+            address:
+              type: string
+              description: Endereço formatado
+            latitude:
+              type: number
+              format: float
+              description: Latitude do local
+            longitude:
+              type: number
+              format: float
+              description: Longitude do local
+        options:
           type: object
           properties:
-            key:
-              type: object
-            message:
-              type: object
+            delay:
+              type: integer
+              description: Delay em milissegundos
+            presence:
+              type: string
+              enum: [composing, recording]
+              description: Estado de presença durante o envio
     ContactEntry:
       type: object
       properties:
@@ -2085,72 +2078,87 @@ components:
         organization: { type: string }
         email: { type: string }
         url: { type: string, format: uri }
+    SendContactOptions:
+      type: object
+      properties:
+        delay:
+          type: integer
+          description: Delay em milissegundos antes de enviar
+        presence:
+          type: string
+          description: Estado de presença (composing, recording, etc)
     SendContactInput:
       type: object
-      required: [number, contact]
+      required: [number, contactMessage]
       properties:
         number:
           type: string
-          description: Número do destinatário
-        contact:
+          description: Número do destinatário (com código do país)
+        contactMessage:
           type: array
           minItems: 1
           items:
             $ref: '#/components/schemas/ContactEntry'
-        delay:
-          type: integer
-          description: Delay em milissegundos
+        options:
+          $ref: '#/components/schemas/SendContactOptions'
     SendReactionInput:
       type: object
-      required: [key, reaction]
+      required: [reactionMessage]
       properties:
-        key:
+        reactionMessage:
           type: object
-          required: [remoteJid, fromMe, id]
-          properties:
-            remoteJid: { type: string }
-            fromMe: { type: boolean }
-            id: { type: string }
-        reaction:
-          type: string
-          description: Emoji da reação
-        delay:
-          type: integer
-          description: Delay em milissegundos
-    SendPollInput:
-      type: object
-      required: [number, name, selectableCount, values]
-      properties:
-        number:
-          type: string
-        name:
-          type: string
-          description: Texto principal da enquete
-        selectableCount:
-          type: integer
-          description: Quantidade de opções selecionáveis
-        values:
-          type: array
-          minItems: 1
-          items:
-            type: string
-        delay:
-          type: integer
-        linkPreview:
-          type: boolean
-        mentionsEveryOne:
-          type: boolean
-        mentioned:
-          type: array
-          items:
-            type: string
-        quoted:
-          type: object
+          required: [key, reaction]
           properties:
             key:
               type: object
-            message:
-              type: object
+              required: [remoteJid, fromMe, id]
+              properties:
+                remoteJid:
+                  type: string
+                  description: JID do chat onde a mensagem está
+                fromMe:
+                  type: boolean
+                  description: Se a mensagem foi enviada por você
+                id:
+                  type: string
+                  description: ID da mensagem a reagir
+            reaction:
+              type: string
+              description: Emoji da reação (ou vazio para remover reação)
+    SendPollInput:
+      type: object
+      required: [number, pollMessage]
+      properties:
+        number:
+          type: string
+          description: Number to receive the poll (with country code)
+        pollMessage:
+          type: object
+          required: [name, selectableCount, values]
+          properties:
+            name:
+              type: string
+              description: Poll question/title
+            selectableCount:
+              type: integer
+              description: Number of options that can be selected (1 for single choice, 2+ for multiple choice)
+              minimum: 1
+            values:
+              type: array
+              description: Poll options
+              minItems: 1
+              items:
+                type: string
+        options:
+          type: object
+          properties:
+            delay:
+              type: integer
+              description: Delay in milliseconds before sending
+            presence:
+              type: string
+              description: Presence status while sending
+              enum: [composing, recording]
     ListRow:
       type: object
       required: [title, rowId]

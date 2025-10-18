@@ -23,15 +23,23 @@ import (
 )
 
 type MessageEventHandler struct {
-	repo       repositories.InstanceRepository
-	waMgr      *whatsapp.Manager
-	storage    storage.Service
-	dispatcher WebhookDispatcher
-	log        waLog.Logger
+	repo             repositories.InstanceRepository
+	waMgr            *whatsapp.Manager
+	storage          storage.Service
+	dispatcher       WebhookDispatcher
+	analyticsService AnalyticsService
+	log              waLog.Logger
 }
 
-func NewMessageEventHandler(repo repositories.InstanceRepository, waMgr *whatsapp.Manager, store storage.Service, dispatcher WebhookDispatcher, log waLog.Logger) *MessageEventHandler {
-	return &MessageEventHandler{repo: repo, waMgr: waMgr, storage: store, dispatcher: dispatcher, log: log}
+func NewMessageEventHandler(repo repositories.InstanceRepository, waMgr *whatsapp.Manager, store storage.Service, dispatcher WebhookDispatcher, analytics AnalyticsService, log waLog.Logger) *MessageEventHandler {
+	return &MessageEventHandler{
+		repo:             repo,
+		waMgr:            waMgr,
+		storage:          store,
+		dispatcher:       dispatcher,
+		analyticsService: analytics,
+		log:              log,
+	}
 }
 
 func (h *MessageEventHandler) HandleMessage(ctx context.Context, instanceName string, evt *events.Message) {
@@ -69,6 +77,12 @@ func (h *MessageEventHandler) HandleMessage(ctx context.Context, instanceName st
 	uploads := h.replaceMedia(ctx, inst, sess, evt)
 
 	messageType := detectMessageType(evt.Message)
+
+	// Se for reação, processar no analytics
+	if messageType == "reactionMessage" {
+		go h.ProcessReaction(ctx, instanceName, evt)
+	}
+
 	if h.log != nil {
 		h.log.Debugf("messages.upsert instance=%s chat=%s id=%s type=%s", inst.Name, evt.Info.Chat, evt.Info.ID, messageType)
 	}
@@ -425,4 +439,63 @@ func sanitizeFileName(name string) string {
 	return clean
 }
 
+// HandleReceipt processa confirmações de leitura/visualização
+func (h *MessageEventHandler) HandleReceipt(ctx context.Context, instanceName string, evt *events.Receipt) {
+	if h == nil || evt == nil || h.analyticsService == nil {
+		return
+	}
+
+	// Processar cada mensagem confirmada
+	for _, msgID := range evt.MessageIDs {
+		// Registrar visualização no analytics
+		viewerJID := evt.Sender.String()
+		viewerName := ""
+
+		if err := h.analyticsService.RecordMessageView(ctx, msgID, viewerJID, viewerName); err != nil {
+			if h.log != nil {
+				h.log.Warnf("Failed to record message view for %s: %v", msgID, err)
+			}
+		}
+	}
+}
+
+// ProcessReaction processa reações recebidas em mensagens
+func (h *MessageEventHandler) ProcessReaction(ctx context.Context, instanceName string, evt *events.Message) {
+	if h == nil || evt == nil || evt.Message == nil || h.analyticsService == nil {
+		return
+	}
+
+	reaction := evt.Message.GetReactionMessage()
+	if reaction == nil {
+		return
+	}
+
+	// Extrair informações da reação
+	key := reaction.GetKey()
+	if key == nil {
+		return
+	}
+
+	messageID := key.GetId()
+	if messageID == "" {
+		return
+	}
+
+	reactorJID := evt.Info.Sender.String()
+	if reactorJID == "" {
+		reactorJID = evt.Info.Chat.String()
+	}
+
+	reactorName := evt.Info.PushName
+	reactionText := reaction.GetText()
+
+	// Registrar reação no analytics
+	if err := h.analyticsService.RecordMessageReaction(ctx, messageID, reactorJID, reactorName, reactionText); err != nil {
+		if h.log != nil {
+			h.log.Warnf("Failed to record message reaction for %s: %v", messageID, err)
+		}
+	}
+}
+
 var _ MessageEventListener = (*MessageEventHandler)(nil)
+var _ ReceiptEventListener = (*MessageEventHandler)(nil)

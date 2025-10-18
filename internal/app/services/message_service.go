@@ -442,139 +442,737 @@ func buildMediaMessage(upload whatsmeow.UploadResponse, kind, mimeType, fileName
 
 func (s *messageService) SendStatus(ctx context.Context, in message.SendStatusInput) (message.SendTextOutput, error) {
 	out := message.SendTextOutput{}
-	if _, err := s.readySession(in.InstanceID); err != nil {
+	sess, err := s.readySession(in.InstanceID)
+	if err != nil {
 		return out, err
 	}
 
-	// TODO: Implementar envio de status
-	// Requer construção específica para broadcast list do status
-	// StatusBroadcast JID: status@broadcast
-	_ = in
+	statusMsg := in.StatusMessage
+	statusType := strings.ToLower(strings.TrimSpace(statusMsg.Type))
+	if statusType == "" {
+		return out, errors.New("status type is required")
+	}
 
-	return out, errors.New("status sending not implemented yet")
+	// Status broadcast JID
+	statusJID := types.NewJID("", types.BroadcastServer)
+
+	var protoMsg *waProto.Message
+	var messageType string
+
+	switch statusType {
+	case "text":
+		if strings.TrimSpace(statusMsg.Content) == "" {
+			return out, errors.New("content is required for text status")
+		}
+
+		// Build text status message
+		extMsg := &waProto.ExtendedTextMessage{
+			Text: proto.String(statusMsg.Content),
+		}
+
+		// Parse background color if provided
+		if bgColor := strings.TrimSpace(statusMsg.BackgroundColor); bgColor != "" {
+			// Remove # if present and convert hex to ARGB
+			bgColor = strings.TrimPrefix(bgColor, "#")
+			if len(bgColor) == 6 {
+				// Convert RGB to ARGB (add FF for alpha)
+				bgColor = "FF" + bgColor
+			}
+			// Parse hex color to uint32
+			var argb uint32
+			if _, err := fmt.Sscanf(bgColor, "%x", &argb); err == nil {
+				extMsg.BackgroundArgb = proto.Uint32(argb)
+			}
+		}
+
+		// Font can be set but we'll use default for now
+		// Different WhatsApp versions may support different font types
+
+		protoMsg = &waProto.Message{
+			ExtendedTextMessage: extMsg,
+		}
+		messageType = "extendedTextMessage"
+
+	case "image":
+		data, _, mimeType, err := s.extractStatusMedia(ctx, statusMsg.Content)
+		if err != nil {
+			return out, fmt.Errorf("failed to extract image: %w", err)
+		}
+
+		mimeType = normalizeContentType(mimeType, data)
+		if !strings.HasPrefix(mimeType, "image/") {
+			mimeType = "image/jpeg"
+		}
+
+		uploadResp, err := sess.Client.Upload(ctx, data, whatsmeow.MediaImage)
+		if err != nil {
+			return out, fmt.Errorf("failed to upload image: %w", err)
+		}
+
+		img := &waProto.ImageMessage{
+			URL:           proto.String(uploadResp.URL),
+			DirectPath:    proto.String(uploadResp.DirectPath),
+			MediaKey:      uploadResp.MediaKey,
+			FileEncSHA256: uploadResp.FileEncSHA256,
+			FileSHA256:    uploadResp.FileSHA256,
+			FileLength:    proto.Uint64(uploadResp.FileLength),
+			Mimetype:      proto.String(mimeType),
+		}
+
+		if caption := strings.TrimSpace(statusMsg.Caption); caption != "" {
+			img.Caption = proto.String(caption)
+		}
+
+		protoMsg = &waProto.Message{ImageMessage: img}
+		messageType = "imageMessage"
+
+	case "video":
+		data, _, mimeType, err := s.extractStatusMedia(ctx, statusMsg.Content)
+		if err != nil {
+			return out, fmt.Errorf("failed to extract video: %w", err)
+		}
+
+		mimeType = normalizeContentType(mimeType, data)
+		if !strings.HasPrefix(mimeType, "video/") {
+			mimeType = "video/mp4"
+		}
+
+		uploadResp, err := sess.Client.Upload(ctx, data, whatsmeow.MediaVideo)
+		if err != nil {
+			return out, fmt.Errorf("failed to upload video: %w", err)
+		}
+
+		vid := &waProto.VideoMessage{
+			URL:           proto.String(uploadResp.URL),
+			DirectPath:    proto.String(uploadResp.DirectPath),
+			MediaKey:      uploadResp.MediaKey,
+			FileEncSHA256: uploadResp.FileEncSHA256,
+			FileSHA256:    uploadResp.FileSHA256,
+			FileLength:    proto.Uint64(uploadResp.FileLength),
+			Mimetype:      proto.String(mimeType),
+		}
+
+		if caption := strings.TrimSpace(statusMsg.Caption); caption != "" {
+			vid.Caption = proto.String(caption)
+		}
+
+		protoMsg = &waProto.Message{VideoMessage: vid}
+		messageType = "videoMessage"
+
+	case "audio":
+		data, _, mimeType, err := s.extractStatusMedia(ctx, statusMsg.Content)
+		if err != nil {
+			return out, fmt.Errorf("failed to extract audio: %w", err)
+		}
+
+		mimeType = normalizeContentType(mimeType, data)
+		if !strings.HasPrefix(mimeType, "audio/") {
+			mimeType = "audio/ogg; codecs=opus"
+		}
+
+		uploadResp, err := sess.Client.Upload(ctx, data, whatsmeow.MediaAudio)
+		if err != nil {
+			return out, fmt.Errorf("failed to upload audio: %w", err)
+		}
+
+		aud := &waProto.AudioMessage{
+			URL:           proto.String(uploadResp.URL),
+			DirectPath:    proto.String(uploadResp.DirectPath),
+			MediaKey:      uploadResp.MediaKey,
+			FileEncSHA256: uploadResp.FileEncSHA256,
+			FileSHA256:    uploadResp.FileSHA256,
+			FileLength:    proto.Uint64(uploadResp.FileLength),
+			Mimetype:      proto.String(mimeType),
+			PTT:           proto.Bool(false),
+		}
+
+		protoMsg = &waProto.Message{AudioMessage: aud}
+		messageType = "audioMessage"
+
+	default:
+		return out, fmt.Errorf("unsupported status type: %s", statusType)
+	}
+
+	// Send to status broadcast
+	resp, err := sess.Client.SendMessage(ctx, statusJID, protoMsg)
+	if err != nil {
+		return out, fmt.Errorf("failed to send status: %w", err)
+	}
+
+	pushName := "Você"
+	if sess.Client != nil && sess.Client.Store != nil && sess.Client.Store.PushName != "" {
+		pushName = sess.Client.Store.PushName
+	}
+
+	out = message.SendTextOutput{
+		Key: message.MessageKey{
+			RemoteJID: "status@broadcast",
+			FromMe:    true,
+			ID:        resp.ID,
+		},
+		PushName:         pushName,
+		Status:           "PENDING",
+		MessageType:      messageType,
+		MessageTimestamp: resp.Timestamp.Unix(),
+		InstanceID:       sess.ID,
+		Source:           "unknown",
+	}
+
+	return out, nil
+}
+
+func (s *messageService) extractStatusMedia(ctx context.Context, content string) ([]byte, string, string, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, "", "", errors.New("content is required for media status")
+	}
+
+	// Check if it's a URL
+	if strings.HasPrefix(content, "http://") || strings.HasPrefix(content, "https://") {
+		return s.downloadMedia(ctx, content, "", "")
+	}
+
+	// Otherwise, treat as base64
+	data, fileName, mimeType, err := decodeBase64Media(content, "", "")
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	return data, fileName, mimeType, nil
 }
 
 func (s *messageService) SendAudio(ctx context.Context, in message.SendAudioInput) (message.SendTextOutput, error) {
 	out := message.SendTextOutput{}
-	if _, err := s.readySession(in.InstanceID); err != nil {
+	sess, err := s.readySession(in.InstanceID)
+	if err != nil {
 		return out, err
 	}
-	if _, err := resolveDestination(in.To, in.Number); err != nil {
+
+	if strings.TrimSpace(in.Number) == "" {
+		return out, errors.New("number is required")
+	}
+	if strings.TrimSpace(in.AudioMessage.Audio) == "" {
+		return out, errors.New("audio is required")
+	}
+
+	dest, err := parseDestinationJID(in.Number)
+	if err != nil {
 		return out, err
 	}
 
-	if in.Delay > 0 {
-		time.Sleep(time.Duration(in.Delay) * time.Millisecond)
+	delay := 0
+	ptt := false
+	if in.Options != nil {
+		if in.Options.Delay > 0 {
+			delay = in.Options.Delay
+		}
+		// If encoding is true, send as PTT (voice message)
+		ptt = in.Options.Encoding
 	}
 
-	// TODO: Implementar envio de áudio (upload, quoted, mentions)
+	if delay > 0 {
+		time.Sleep(time.Duration(delay) * time.Millisecond)
+	}
 
-	return out, errors.New("audio sending not implemented yet")
+	// Extract audio data (URL or base64)
+	data, _, mimeType, err := s.extractStatusMedia(ctx, in.AudioMessage.Audio)
+	if err != nil {
+		return out, fmt.Errorf("failed to extract audio: %w", err)
+	}
+
+	// Normalize MIME type
+	mimeType = normalizeContentType(mimeType, data)
+	if !strings.HasPrefix(mimeType, "audio/") {
+		// Default to audio/ogg for PTT, audio/mp4 for regular audio
+		if ptt {
+			mimeType = "audio/ogg; codecs=opus"
+		} else {
+			mimeType = "audio/mp4"
+		}
+	}
+
+	// Upload audio
+	uploadResp, err := sess.Client.Upload(ctx, data, whatsmeow.MediaAudio)
+	if err != nil {
+		return out, fmt.Errorf("failed to upload audio: %w", err)
+	}
+
+	if uploadResp.FileLength == 0 {
+		uploadResp.FileLength = uint64(len(data))
+	}
+
+	// Build audio message
+	audioMsg := &waProto.AudioMessage{
+		URL:           proto.String(uploadResp.URL),
+		DirectPath:    proto.String(uploadResp.DirectPath),
+		MediaKey:      uploadResp.MediaKey,
+		FileEncSHA256: uploadResp.FileEncSHA256,
+		FileSHA256:    uploadResp.FileSHA256,
+		FileLength:    proto.Uint64(uploadResp.FileLength),
+		Mimetype:      proto.String(mimeType),
+		PTT:           proto.Bool(ptt),
+	}
+
+	protoMsg := &waProto.Message{
+		AudioMessage: audioMsg,
+	}
+
+	// Send message
+	resp, err := sess.Client.SendMessage(ctx, dest, protoMsg)
+	if err != nil {
+		return out, fmt.Errorf("failed to send audio: %w", err)
+	}
+
+	pushName := "Você"
+	if sess.Client != nil && sess.Client.Store != nil && sess.Client.Store.PushName != "" {
+		pushName = sess.Client.Store.PushName
+	}
+
+	out = message.SendTextOutput{
+		Key: message.MessageKey{
+			RemoteJID: dest.String(),
+			FromMe:    true,
+			ID:        resp.ID,
+		},
+		PushName:         pushName,
+		Status:           "PENDING",
+		MessageType:      "audioMessage",
+		MessageTimestamp: resp.Timestamp.Unix(),
+		InstanceID:       sess.ID,
+		Source:           "unknown",
+	}
+
+	return out, nil
 }
 
 func (s *messageService) SendSticker(ctx context.Context, in message.SendStickerInput) (message.SendTextOutput, error) {
 	out := message.SendTextOutput{}
-	if _, err := s.readySession(in.InstanceID); err != nil {
+	sess, err := s.readySession(in.InstanceID)
+	if err != nil {
 		return out, err
 	}
-	if _, err := resolveDestination(in.To, in.Number); err != nil {
+
+	if strings.TrimSpace(in.Number) == "" {
+		return out, errors.New("number is required")
+	}
+	if strings.TrimSpace(in.StickerMessage.Image) == "" {
+		return out, errors.New("sticker image is required")
+	}
+
+	dest, err := parseDestinationJID(in.Number)
+	if err != nil {
 		return out, err
 	}
 
-	if in.Delay > 0 {
-		time.Sleep(time.Duration(in.Delay) * time.Millisecond)
+	delay := 0
+	if in.Options != nil && in.Options.Delay > 0 {
+		delay = in.Options.Delay
 	}
 
-	// TODO: Implementar envio de figurinha (upload, quoted, mentions)
+	if delay > 0 {
+		time.Sleep(time.Duration(delay) * time.Millisecond)
+	}
 
-	return out, errors.New("sticker sending not implemented yet")
+	// Extract sticker image data (URL or base64)
+	data, _, mimeType, err := s.extractStatusMedia(ctx, in.StickerMessage.Image)
+	if err != nil {
+		return out, fmt.Errorf("failed to extract sticker image: %w", err)
+	}
+
+	// Normalize MIME type - stickers should be image/webp
+	mimeType = normalizeContentType(mimeType, data)
+	if !strings.HasPrefix(mimeType, "image/") {
+		mimeType = "image/webp"
+	}
+
+	// Upload sticker
+	uploadResp, err := sess.Client.Upload(ctx, data, whatsmeow.MediaImage)
+	if err != nil {
+		return out, fmt.Errorf("failed to upload sticker: %w", err)
+	}
+
+	if uploadResp.FileLength == 0 {
+		uploadResp.FileLength = uint64(len(data))
+	}
+
+	// Build sticker message
+	stickerMsg := &waProto.StickerMessage{
+		URL:           proto.String(uploadResp.URL),
+		DirectPath:    proto.String(uploadResp.DirectPath),
+		MediaKey:      uploadResp.MediaKey,
+		FileEncSHA256: uploadResp.FileEncSHA256,
+		FileSHA256:    uploadResp.FileSHA256,
+		FileLength:    proto.Uint64(uploadResp.FileLength),
+		Mimetype:      proto.String(mimeType),
+	}
+
+	protoMsg := &waProto.Message{
+		StickerMessage: stickerMsg,
+	}
+
+	// Send message
+	resp, err := sess.Client.SendMessage(ctx, dest, protoMsg)
+	if err != nil {
+		return out, fmt.Errorf("failed to send sticker: %w", err)
+	}
+
+	pushName := "Você"
+	if sess.Client != nil && sess.Client.Store != nil && sess.Client.Store.PushName != "" {
+		pushName = sess.Client.Store.PushName
+	}
+
+	out = message.SendTextOutput{
+		Key: message.MessageKey{
+			RemoteJID: dest.String(),
+			FromMe:    true,
+			ID:        resp.ID,
+		},
+		PushName:         pushName,
+		Status:           "PENDING",
+		MessageType:      "stickerMessage",
+		MessageTimestamp: resp.Timestamp.Unix(),
+		InstanceID:       sess.ID,
+		Source:           "unknown",
+	}
+
+	return out, nil
 }
 
 func (s *messageService) SendLocation(ctx context.Context, in message.SendLocationInput) (message.SendTextOutput, error) {
 	out := message.SendTextOutput{}
-	if _, err := s.readySession(in.InstanceID); err != nil {
+	sess, err := s.readySession(in.InstanceID)
+	if err != nil {
 		return out, err
 	}
-	if _, err := resolveDestination(in.To, in.Number); err != nil {
+
+	if strings.TrimSpace(in.Number) == "" {
+		return out, errors.New("number is required")
+	}
+
+	dest, err := parseDestinationJID(in.Number)
+	if err != nil {
 		return out, err
 	}
 
-	if in.Delay > 0 {
-		time.Sleep(time.Duration(in.Delay) * time.Millisecond)
+	delay := 0
+	if in.Options != nil && in.Options.Delay > 0 {
+		delay = in.Options.Delay
 	}
 
-	// TODO: Implementar envio de localização (quoted, mentions)
+	if delay > 0 {
+		time.Sleep(time.Duration(delay) * time.Millisecond)
+	}
 
-	return out, errors.New("location sending not implemented yet")
+	// Build location message
+	locationMsg := &waProto.LocationMessage{
+		DegreesLatitude:  proto.Float64(in.LocationMessage.Latitude),
+		DegreesLongitude: proto.Float64(in.LocationMessage.Longitude),
+	}
+
+	if name := strings.TrimSpace(in.LocationMessage.Name); name != "" {
+		locationMsg.Name = proto.String(name)
+	}
+
+	if address := strings.TrimSpace(in.LocationMessage.Address); address != "" {
+		locationMsg.Address = proto.String(address)
+	}
+
+	protoMsg := &waProto.Message{
+		LocationMessage: locationMsg,
+	}
+
+	// Send message
+	resp, err := sess.Client.SendMessage(ctx, dest, protoMsg)
+	if err != nil {
+		return out, fmt.Errorf("failed to send location: %w", err)
+	}
+
+	pushName := "Você"
+	if sess.Client != nil && sess.Client.Store != nil && sess.Client.Store.PushName != "" {
+		pushName = sess.Client.Store.PushName
+	}
+
+	out = message.SendTextOutput{
+		Key: message.MessageKey{
+			RemoteJID: dest.String(),
+			FromMe:    true,
+			ID:        resp.ID,
+		},
+		PushName:         pushName,
+		Status:           "PENDING",
+		MessageType:      "locationMessage",
+		MessageTimestamp: resp.Timestamp.Unix(),
+		InstanceID:       sess.ID,
+		Source:           "unknown",
+	}
+
+	return out, nil
 }
 
 func (s *messageService) SendContact(ctx context.Context, in message.SendContactInput) (message.SendTextOutput, error) {
 	out := message.SendTextOutput{}
-	if _, err := s.readySession(in.InstanceID); err != nil {
+	sess, err := s.readySession(in.InstanceID)
+	if err != nil {
 		return out, err
 	}
-	if _, err := resolveDestination(in.To, in.Number); err != nil {
+
+	if strings.TrimSpace(in.Number) == "" {
+		return out, errors.New("number is required")
+	}
+	if len(in.ContactMessage) == 0 {
+		return out, errors.New("contactMessage is required and must contain at least one contact")
+	}
+
+	dest, err := parseDestinationJID(in.Number)
+	if err != nil {
 		return out, err
 	}
-	if len(in.Contact) == 0 {
-		return out, errors.New("invalid contact payload")
+
+	delay := 0
+	if in.Options != nil && in.Options.Delay > 0 {
+		delay = in.Options.Delay
+	}
+	if delay > 0 {
+		time.Sleep(time.Duration(delay) * time.Millisecond)
 	}
 
-	if in.Delay > 0 {
-		time.Sleep(time.Duration(in.Delay) * time.Millisecond)
+	// Build vCard for each contact
+	vcards := make([]*waProto.ContactMessage, 0, len(in.ContactMessage))
+	for _, contact := range in.ContactMessage {
+		vcard := buildVCard(contact)
+		displayName := strings.TrimSpace(contact.FullName)
+		if displayName == "" {
+			displayName = strings.TrimSpace(contact.PhoneNumber)
+		}
+
+		vcards = append(vcards, &waProto.ContactMessage{
+			DisplayName: proto.String(displayName),
+			Vcard:       proto.String(vcard),
+		})
 	}
 
-	// TODO: Implementar envio de contatos (vCard)
+	var protoMsg *waProto.Message
+	if len(vcards) == 1 {
+		protoMsg = &waProto.Message{
+			ContactMessage: vcards[0],
+		}
+	} else {
+		protoMsg = &waProto.Message{
+			ContactsArrayMessage: &waProto.ContactsArrayMessage{
+				DisplayName: proto.String(fmt.Sprintf("%d contacts", len(vcards))),
+				Contacts:    vcards,
+			},
+		}
+	}
 
-	return out, errors.New("contact sending not implemented yet")
+	resp, err := sess.Client.SendMessage(ctx, dest, protoMsg)
+	if err != nil {
+		return out, fmt.Errorf("failed to send contact: %w", err)
+	}
+
+	out.Key = message.MessageKey{
+		RemoteJID: resp.ID,
+		FromMe:    true,
+		ID:        resp.ID,
+	}
+	out.Status = "PENDING"
+	out.MessageTimestamp = resp.Timestamp.Unix()
+	out.InstanceID = in.InstanceID
+
+	return out, nil
+}
+
+func buildVCard(contact message.ContactEntry) string {
+	var builder strings.Builder
+	builder.WriteString("BEGIN:VCARD\n")
+	builder.WriteString("VERSION:3.0\n")
+
+	fullName := strings.TrimSpace(contact.FullName)
+	if fullName != "" {
+		builder.WriteString(fmt.Sprintf("FN:%s\n", fullName))
+		builder.WriteString(fmt.Sprintf("N:%s\n", fullName))
+	}
+
+	if wuid := strings.TrimSpace(contact.WUID); wuid != "" {
+		builder.WriteString(fmt.Sprintf("item1.X-ABLabel:WhatsApp\n"))
+		builder.WriteString(fmt.Sprintf("item1.IMPP:x-apple:wuid=%s\n", wuid))
+	}
+
+	if phone := strings.TrimSpace(contact.PhoneNumber); phone != "" {
+		// Ensure phone starts with +
+		if !strings.HasPrefix(phone, "+") {
+			phone = "+" + phone
+		}
+		builder.WriteString(fmt.Sprintf("TEL;type=CELL;waid=%s:+%s\n",
+			strings.TrimPrefix(phone, "+"),
+			strings.TrimPrefix(phone, "+")))
+	}
+
+	if org := strings.TrimSpace(contact.Organization); org != "" {
+		builder.WriteString(fmt.Sprintf("ORG:%s;\n", org))
+	}
+
+	if email := strings.TrimSpace(contact.Email); email != "" {
+		builder.WriteString(fmt.Sprintf("EMAIL:%s\n", email))
+	}
+
+	if url := strings.TrimSpace(contact.URL); url != "" {
+		builder.WriteString(fmt.Sprintf("URL:%s\n", url))
+	}
+
+	builder.WriteString("END:VCARD")
+	return builder.String()
 }
 
 func (s *messageService) SendReaction(ctx context.Context, in message.SendReactionInput) (message.SendTextOutput, error) {
 	out := message.SendTextOutput{}
-	if _, err := s.readySession(in.InstanceID); err != nil {
+	sess, err := s.readySession(in.InstanceID)
+	if err != nil {
 		return out, err
 	}
-	if strings.TrimSpace(in.Reaction) == "" {
-		return out, errors.New("invalid reaction")
+
+	// Validate message key
+	if strings.TrimSpace(in.ReactionMessage.Key.RemoteJID) == "" {
+		return out, errors.New("remoteJid is required in reactionMessage.key")
 	}
-	if _, err := parseDestinationJID(in.Key.RemoteJID); err != nil {
-		return out, err
-	}
-	if strings.TrimSpace(in.Key.ID) == "" {
-		return out, errors.New("invalid reaction")
+	if strings.TrimSpace(in.ReactionMessage.Key.ID) == "" {
+		return out, errors.New("id is required in reactionMessage.key")
 	}
 
-	if in.Delay > 0 {
-		time.Sleep(time.Duration(in.Delay) * time.Millisecond)
+	// Parse destination JID
+	destJID, err := parseDestinationJID(in.ReactionMessage.Key.RemoteJID)
+	if err != nil {
+		return out, fmt.Errorf("invalid remoteJid: %w", err)
 	}
 
-	// TODO: Implementar envio de reação
+	// Build reaction message
+	// Empty string removes the reaction, otherwise adds/updates it
+	reaction := strings.TrimSpace(in.ReactionMessage.Reaction)
 
-	return out, errors.New("reaction sending not implemented yet")
+	reactionMsg := &waProto.ReactionMessage{
+		Key: &waProto.MessageKey{
+			RemoteJID: proto.String(destJID.String()),
+			FromMe:    proto.Bool(in.ReactionMessage.Key.FromMe),
+			ID:        proto.String(in.ReactionMessage.Key.ID),
+		},
+		Text:              proto.String(reaction),
+		SenderTimestampMS: proto.Int64(time.Now().UnixMilli()),
+	}
+
+	protoMsg := &waProto.Message{
+		ReactionMessage: reactionMsg,
+	}
+
+	// Send reaction
+	resp, err := sess.Client.SendMessage(ctx, destJID, protoMsg)
+	if err != nil {
+		return out, fmt.Errorf("failed to send reaction: %w", err)
+	}
+
+	pushName := "Você"
+	if sess.Client != nil && sess.Client.Store != nil && sess.Client.Store.PushName != "" {
+		pushName = sess.Client.Store.PushName
+	}
+
+	out = message.SendTextOutput{
+		Key: message.MessageKey{
+			RemoteJID: destJID.String(),
+			FromMe:    true,
+			ID:        resp.ID,
+		},
+		PushName:         pushName,
+		Status:           "PENDING",
+		MessageType:      "reactionMessage",
+		MessageTimestamp: resp.Timestamp.Unix(),
+		InstanceID:       sess.ID,
+		Source:           "unknown",
+	}
+
+	return out, nil
 }
 
 func (s *messageService) SendPoll(ctx context.Context, in message.SendPollInput) (message.SendTextOutput, error) {
 	out := message.SendTextOutput{}
-	if _, err := s.readySession(in.InstanceID); err != nil {
+	sess, err := s.readySession(in.InstanceID)
+	if err != nil {
 		return out, err
 	}
-	if _, err := resolveDestination(in.To, in.Number); err != nil {
+
+	if strings.TrimSpace(in.Number) == "" {
+		return out, errors.New("number is required")
+	}
+	if strings.TrimSpace(in.PollMessage.Name) == "" {
+		return out, errors.New("poll name is required")
+	}
+	if len(in.PollMessage.Values) == 0 {
+		return out, errors.New("poll must have at least one option")
+	}
+	if in.PollMessage.SelectableCount <= 0 {
+		return out, errors.New("selectableCount must be greater than 0")
+	}
+	if in.PollMessage.SelectableCount > len(in.PollMessage.Values) {
+		return out, errors.New("selectableCount cannot be greater than number of options")
+	}
+
+	dest, err := parseDestinationJID(in.Number)
+	if err != nil {
 		return out, err
 	}
-	if strings.TrimSpace(in.Name) == "" || len(in.Values) == 0 {
-		return out, errors.New("invalid poll payload")
-	}
-	if in.SelectableCount <= 0 {
-		return out, errors.New("invalid poll payload")
-	}
 
-	if in.Delay > 0 {
-		time.Sleep(time.Duration(in.Delay) * time.Millisecond)
+	delay := 0
+	if in.Options != nil && in.Options.Delay > 0 {
+		delay = in.Options.Delay
 	}
 
-	// TODO: Implementar envio de enquetes
+	if delay > 0 {
+		time.Sleep(time.Duration(delay) * time.Millisecond)
+	}
 
-	return out, errors.New("poll sending not implemented yet")
+	// Build poll options
+	pollOptions := make([]*waProto.PollCreationMessage_Option, 0, len(in.PollMessage.Values))
+	for _, value := range in.PollMessage.Values {
+		pollOptions = append(pollOptions, &waProto.PollCreationMessage_Option{
+			OptionName: proto.String(value),
+		})
+	}
+
+	// Build poll creation message
+	pollMsg := &waProto.PollCreationMessage{
+		Name:                   proto.String(in.PollMessage.Name),
+		Options:                pollOptions,
+		SelectableOptionsCount: proto.Uint32(uint32(in.PollMessage.SelectableCount)),
+	}
+
+	protoMsg := &waProto.Message{
+		PollCreationMessage: pollMsg,
+	}
+
+	// Send message
+	resp, err := sess.Client.SendMessage(ctx, dest, protoMsg)
+	if err != nil {
+		return out, fmt.Errorf("failed to send poll: %w", err)
+	}
+
+	pushName := "Você"
+	if sess.Client != nil && sess.Client.Store != nil && sess.Client.Store.PushName != "" {
+		pushName = sess.Client.Store.PushName
+	}
+
+	out = message.SendTextOutput{
+		Key: message.MessageKey{
+			RemoteJID: dest.String(),
+			FromMe:    true,
+			ID:        resp.ID,
+		},
+		PushName:         pushName,
+		Status:           "PENDING",
+		MessageType:      "pollCreationMessage",
+		MessageTimestamp: resp.Timestamp.Unix(),
+		InstanceID:       sess.ID,
+		Source:           "unknown",
+	}
+
+	return out, nil
 }
 
 func (s *messageService) SendList(ctx context.Context, in message.SendListInput) (message.SendTextOutput, error) {

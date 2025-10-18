@@ -64,6 +64,7 @@ type AnnouncementResult struct {
 type communityService struct {
 	waMgr          *whatsapp.Manager
 	msgSvc         MessageService
+	analyticsSvc   AnalyticsService
 	membershipRepo repositories.CommunityMembershipRepository
 	cacheMu        sync.RWMutex
 	subGroupCache  map[string]subGroupCacheEntry
@@ -71,10 +72,11 @@ type communityService struct {
 }
 
 // NewCommunityService assembles the community service with the required dependencies.
-func NewCommunityService(waMgr *whatsapp.Manager, msgSvc MessageService, membershipRepo repositories.CommunityMembershipRepository) CommunityService {
+func NewCommunityService(waMgr *whatsapp.Manager, msgSvc MessageService, analyticsSvc AnalyticsService, membershipRepo repositories.CommunityMembershipRepository) CommunityService {
 	return &communityService{
 		waMgr:          waMgr,
 		msgSvc:         msgSvc,
+		analyticsSvc:   analyticsSvc,
 		membershipRepo: membershipRepo,
 		subGroupCache:  make(map[string]subGroupCacheEntry),
 		cacheTTL:       time.Minute,
@@ -416,6 +418,16 @@ func (s *communityService) SendAnnouncement(ctx context.Context, instanceID stri
 			if err != nil {
 				return nil, err
 			}
+
+			// Rastrear mensagem enviada
+			if s.analyticsSvc != nil {
+				_, trackErr := s.analyticsSvc.TrackSentMessage(ctx, instanceID, communityJID.String(), msg, caption, mediaPayload, caption)
+				if trackErr != nil {
+					// Log error but don't fail the send
+					// TODO: Add logging
+				}
+			}
+
 			results = append(results, AnnouncementResult{
 				CommunityJID: communityJID.String(),
 				TargetJID:    target.String(),
@@ -432,6 +444,16 @@ func (s *communityService) SendAnnouncement(ctx context.Context, instanceID stri
 		if err != nil {
 			return nil, err
 		}
+
+		// Rastrear mensagem enviada
+		if s.analyticsSvc != nil {
+			_, trackErr := s.analyticsSvc.TrackSentMessage(ctx, instanceID, communityJID.String(), msg, text, "", "")
+			if trackErr != nil {
+				// Log error but don't fail the send
+				// TODO: Add logging
+			}
+		}
+
 		results = append(results, AnnouncementResult{
 			CommunityJID: communityJID.String(),
 			TargetJID:    target.String(),

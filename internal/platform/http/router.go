@@ -22,6 +22,7 @@ type RouterConfig struct {
 	SettingsCtrl  *controllers.SettingsController
 	GroupCtrl     *controllers.GroupController
 	ProfileCtrl   *controllers.ProfileController
+	AnalyticsCtrl *controllers.AnalyticsController
 	Logger        waLog.Logger
 	WAManager     *whatsapp.Manager
 	SwaggerEnable bool
@@ -705,6 +706,51 @@ func NewRouter(cfg RouterConfig) stdhttp.Handler {
 		})
 
 		mux.Handle("/chat/", chatMux)
+	}
+
+	// Analytics endpoints
+	if cfg.AnalyticsCtrl != nil {
+		analyticsMux := stdhttp.NewServeMux()
+
+		// GET /analytics/messages/{trackId}/metrics
+		analyticsMux.HandleFunc("/messages/", func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+			if r.Method != stdhttp.MethodGet {
+				w.WriteHeader(stdhttp.StatusMethodNotAllowed)
+				return
+			}
+
+			// Extract trackId from path: /analytics/messages/{trackId}/metrics
+			path := strings.TrimPrefix(r.URL.Path, "/messages/")
+			parts := strings.Split(path, "/")
+			if len(parts) < 2 || parts[0] == "" || parts[1] != "metrics" {
+				w.WriteHeader(stdhttp.StatusNotFound)
+				return
+			}
+
+			trackID := parts[0]
+			cfg.AnalyticsCtrl.GetMessageMetrics(w, r, trackID)
+		})
+
+		// GET /analytics/instances/{instanceId}/metrics
+		analyticsMux.HandleFunc("/instances/", func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+			if r.Method != stdhttp.MethodGet {
+				w.WriteHeader(stdhttp.StatusMethodNotAllowed)
+				return
+			}
+
+			// Extract instanceId from path: /analytics/instances/{instanceId}/metrics
+			path := strings.TrimPrefix(r.URL.Path, "/instances/")
+			parts := strings.Split(path, "/")
+			if len(parts) < 2 || parts[0] == "" || parts[1] != "metrics" {
+				w.WriteHeader(stdhttp.StatusNotFound)
+				return
+			}
+
+			instanceID := parts[0]
+			cfg.AnalyticsCtrl.GetInstanceMetrics(w, r, instanceID)
+		})
+
+		mux.Handle("/analytics/", analyticsMux)
 	}
 
 	// Middlewares wrap

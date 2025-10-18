@@ -56,6 +56,7 @@ func main() {
 	var (
 		repo           repositories.InstanceRepository
 		membershipRepo repositories.CommunityMembershipRepository
+		analyticsRepo  repositories.AnalyticsRepository
 		dbClose        func() error
 	)
 
@@ -76,6 +77,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("membership repository initialization error: %v", err)
 		}
+		analyticsRepo = repositories.NewAnalyticsRepository(db)
 	default:
 		log.Printf("initializing in-memory repository")
 		repo = repositories.NewInMemoryInstanceRepo()
@@ -96,12 +98,19 @@ func main() {
 	waMgr := whatsapp.NewManager(loggers.App.Sub("WA"))
 	storeFactory := whatsapp.NewStoreFactory(cfg.DataDir, loggers.App.Sub("Store"))
 	webhookDispatcher := services.NewWebhookDispatcher(nil, loggers.App.Sub("Webhook"))
-	messageEvents := services.NewMessageEventHandler(repo, waMgr, objectStorage, webhookDispatcher, loggers.App.Sub("Events"))
+
+	var analyticsSvc services.AnalyticsService
+	if analyticsRepo != nil {
+		analyticsSvc = services.NewAnalyticsService(analyticsRepo)
+	}
+
+	messageEvents := services.NewMessageEventHandler(repo, waMgr, objectStorage, webhookDispatcher, analyticsSvc, loggers.App.Sub("Events"))
 	bootstrap := services.NewSessionBootstrap(storeFactory, waMgr, loggers.App.Sub("Bootstrap"), messageEvents)
+	bootstrap.ReceiptEvents = messageEvents
 
 	instanceSvc := services.NewInstanceService(repo, waMgr, objectStorage)
 	messageSvc := services.NewMessageService(waMgr, objectStorage)
-	communitySvc := services.NewCommunityService(waMgr, messageSvc, membershipRepo)
+	communitySvc := services.NewCommunityService(waMgr, messageSvc, analyticsSvc, membershipRepo)
 	groupSvc := services.NewGroupService(waMgr)
 	profileSvc := services.NewProfileService(waMgr)
 
@@ -117,7 +126,25 @@ func main() {
 	settingsCtrl := controllers.NewSettingsController(instanceSvc)
 	profileCtrl := controllers.NewProfileController(profileSvc)
 
-	router := httpPlatform.NewRouter(httpPlatform.RouterConfig{InstanceCtrl: instanceCtrl, MessageCtrl: messageCtrl, CommunityCtrl: communityCtrl, GroupCtrl: groupCtrl, WebhookCtrl: webhookCtrl, SettingsCtrl: settingsCtrl, ProfileCtrl: profileCtrl, Logger: loggers.HTTP, WAManager: waMgr, SwaggerEnable: cfg.SwaggerEnable, MasterToken: cfg.MasterToken})
+	var analyticsCtrl *controllers.AnalyticsController
+	if analyticsSvc != nil {
+		analyticsCtrl = controllers.NewAnalyticsController(analyticsSvc)
+	}
+
+	router := httpPlatform.NewRouter(httpPlatform.RouterConfig{
+		InstanceCtrl:  instanceCtrl,
+		MessageCtrl:   messageCtrl,
+		CommunityCtrl: communityCtrl,
+		GroupCtrl:     groupCtrl,
+		WebhookCtrl:   webhookCtrl,
+		SettingsCtrl:  settingsCtrl,
+		ProfileCtrl:   profileCtrl,
+		AnalyticsCtrl: analyticsCtrl,
+		Logger:        loggers.HTTP,
+		WAManager:     waMgr,
+		SwaggerEnable: cfg.SwaggerEnable,
+		MasterToken:   cfg.MasterToken,
+	})
 
 	srv := &http.Server{Addr: ":" + cfg.HTTPPort, Handler: router}
 	go func() {

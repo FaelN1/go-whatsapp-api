@@ -38,45 +38,56 @@ type SendMediaInput struct {
 	FileHeader *multipart.FileHeader `json:"-"`
 }
 
+type AudioMessage struct {
+	Audio string `json:"audio"` // URL or base64
+}
+
+type AudioOptions struct {
+	Delay    int    `json:"delay,omitempty"`
+	Presence string `json:"presence,omitempty"` // "recording" or "composing"
+	Encoding bool   `json:"encoding,omitempty"` // Convert to PTT format
+}
+
 type SendAudioInput struct {
-	InstanceID       string         `json:"instanceId"`
-	To               string         `json:"to,omitempty"`
-	Number           string         `json:"number,omitempty"`
-	Audio            string         `json:"audio"`
-	MimeType         string         `json:"mimetype,omitempty"`
-	PTT              bool           `json:"ptt,omitempty"`
-	Delay            int            `json:"delay,omitempty"`
-	LinkPreview      bool           `json:"linkPreview,omitempty"`
-	MentionsEveryOne bool           `json:"mentionsEveryOne,omitempty"`
-	Mentioned        []string       `json:"mentioned,omitempty"`
-	Quoted           *QuotedMessage `json:"quoted,omitempty"`
+	InstanceID   string        `json:"instanceId"`
+	Number       string        `json:"number"`
+	AudioMessage AudioMessage  `json:"audioMessage"`
+	Options      *AudioOptions `json:"options,omitempty"`
+}
+
+type StickerMessage struct {
+	Image string `json:"image"` // URL or base64
+}
+
+type StickerOptions struct {
+	Delay    int    `json:"delay,omitempty"`
+	Presence string `json:"presence,omitempty"` // "composing" or "recording"
 }
 
 type SendStickerInput struct {
-	InstanceID       string         `json:"instanceId"`
-	To               string         `json:"to,omitempty"`
-	Number           string         `json:"number,omitempty"`
-	Sticker          string         `json:"sticker"`
-	Delay            int            `json:"delay,omitempty"`
-	LinkPreview      bool           `json:"linkPreview,omitempty"`
-	MentionsEveryOne bool           `json:"mentionsEveryOne,omitempty"`
-	Mentioned        []string       `json:"mentioned,omitempty"`
-	Quoted           *QuotedMessage `json:"quoted,omitempty"`
+	InstanceID     string          `json:"instanceId"`
+	Number         string          `json:"number"`
+	StickerMessage StickerMessage  `json:"stickerMessage"`
+	Options        *StickerOptions `json:"options,omitempty"`
+}
+
+type LocationMessage struct {
+	Name      string  `json:"name"`
+	Address   string  `json:"address"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
+type LocationOptions struct {
+	Delay    int    `json:"delay,omitempty"`
+	Presence string `json:"presence,omitempty"` // "composing" or "recording"
 }
 
 type SendLocationInput struct {
-	InstanceID       string         `json:"instanceId"`
-	To               string         `json:"to,omitempty"`
-	Number           string         `json:"number,omitempty"`
-	Name             string         `json:"name"`
-	Address          string         `json:"address"`
-	Latitude         float64        `json:"latitude"`
-	Longitude        float64        `json:"longitude"`
-	Delay            int            `json:"delay,omitempty"`
-	LinkPreview      bool           `json:"linkPreview,omitempty"`
-	MentionsEveryOne bool           `json:"mentionsEveryOne,omitempty"`
-	Mentioned        []string       `json:"mentioned,omitempty"`
-	Quoted           *QuotedMessage `json:"quoted,omitempty"`
+	InstanceID      string           `json:"instanceId"`
+	Number          string           `json:"number"`
+	LocationMessage LocationMessage  `json:"locationMessage"`
+	Options         *LocationOptions `json:"options,omitempty"`
 }
 
 type ContactEntry struct {
@@ -88,33 +99,44 @@ type ContactEntry struct {
 	URL          string `json:"url,omitempty"`
 }
 
+type SendContactOptions struct {
+	Delay    int    `json:"delay,omitempty"`
+	Presence string `json:"presence,omitempty"`
+}
+
 type SendContactInput struct {
-	InstanceID string         `json:"instanceId"`
-	To         string         `json:"to,omitempty"`
-	Number     string         `json:"number,omitempty"`
-	Contact    []ContactEntry `json:"contact"`
-	Delay      int            `json:"delay,omitempty"`
+	InstanceID     string              `json:"instanceId"`
+	Number         string              `json:"number"`
+	ContactMessage []ContactEntry      `json:"contactMessage"`
+	Options        *SendContactOptions `json:"options,omitempty"`
+}
+
+type ReactionMessage struct {
+	Key      MessageKey `json:"key"`
+	Reaction string     `json:"reaction"` // Emoji or empty string to remove reaction
 }
 
 type SendReactionInput struct {
-	InstanceID string     `json:"instanceId"`
-	Key        MessageKey `json:"key"`
-	Reaction   string     `json:"reaction"`
-	Delay      int        `json:"delay,omitempty"`
+	InstanceID      string          `json:"instanceId"`
+	ReactionMessage ReactionMessage `json:"reactionMessage"`
+}
+
+type PollMessage struct {
+	Name            string   `json:"name"`
+	SelectableCount int      `json:"selectableCount"`
+	Values          []string `json:"values"`
+}
+
+type PollOptions struct {
+	Delay    int    `json:"delay,omitempty"`
+	Presence string `json:"presence,omitempty"`
 }
 
 type SendPollInput struct {
-	InstanceID       string         `json:"instanceId"`
-	To               string         `json:"to,omitempty"`
-	Number           string         `json:"number,omitempty"`
-	Name             string         `json:"name"`
-	SelectableCount  int            `json:"selectableCount"`
-	Values           []string       `json:"values"`
-	Delay            int            `json:"delay,omitempty"`
-	LinkPreview      bool           `json:"linkPreview,omitempty"`
-	MentionsEveryOne bool           `json:"mentionsEveryOne,omitempty"`
-	Mentioned        []string       `json:"mentioned,omitempty"`
-	Quoted           *QuotedMessage `json:"quoted,omitempty"`
+	InstanceID  string       `json:"instanceId"`
+	Number      string       `json:"number"`
+	PollMessage PollMessage  `json:"pollMessage"`
+	Options     *PollOptions `json:"options,omitempty"`
 }
 
 type ListRow struct {
@@ -165,15 +187,19 @@ type SendButtonInput struct {
 	Quoted           *QuotedMessage `json:"quoted,omitempty"`
 }
 
+type StatusMessage struct {
+	Type            string   `json:"type"`                      // text, image, video, audio
+	Content         string   `json:"content"`                   // URL or base64 for media, text for text status
+	Caption         string   `json:"caption,omitempty"`         // Caption for media status
+	BackgroundColor string   `json:"backgroundColor,omitempty"` // Hex color for text status (e.g., "#FF5733")
+	Font            int      `json:"font,omitempty"`            // Font number 0-5 for text status
+	AllContacts     bool     `json:"allContacts"`               // Send to all contacts
+	StatusJidList   []string `json:"statusJidList,omitempty"`   // Specific JIDs to send status to
+}
+
 type SendStatusInput struct {
-	InstanceID      string   `json:"instanceId"`
-	Type            string   `json:"type"` // text, image, audio
-	Content         string   `json:"content"`
-	Caption         string   `json:"caption,omitempty"`
-	BackgroundColor string   `json:"backgroundColor,omitempty"`
-	Font            int      `json:"font,omitempty"` // 1-5
-	AllContacts     bool     `json:"allContacts"`
-	StatusJidList   []string `json:"statusJidList,omitempty"`
+	InstanceID    string        `json:"instanceId"`
+	StatusMessage StatusMessage `json:"statusMessage"`
 }
 
 type MessageKey struct {

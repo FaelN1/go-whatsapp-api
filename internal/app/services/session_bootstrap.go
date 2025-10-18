@@ -17,11 +17,16 @@ type MessageEventListener interface {
 	HandleMessage(ctx context.Context, instanceName string, evt *events.Message)
 }
 
+type ReceiptEventListener interface {
+	HandleReceipt(ctx context.Context, instanceName string, evt *events.Receipt)
+}
+
 type SessionBootstrap struct {
-	StoreFactory *whatsapp.StoreFactory
-	Manager      *whatsapp.Manager
-	Log          waLog.Logger
-	Events       MessageEventListener
+	StoreFactory  *whatsapp.StoreFactory
+	Manager       *whatsapp.Manager
+	Log           waLog.Logger
+	Events        MessageEventListener
+	ReceiptEvents ReceiptEventListener
 }
 
 func NewSessionBootstrap(f *whatsapp.StoreFactory, m *whatsapp.Manager, log waLog.Logger, events MessageEventListener) *SessionBootstrap {
@@ -42,15 +47,19 @@ func (b *SessionBootstrap) InitNewSession(ctx context.Context, instanceName stri
 
 	if b.Events != nil {
 		client.AddEventHandler(func(evt any) {
-			messageEvt, ok := evt.(*events.Message)
-			if !ok {
-				return
+			switch e := evt.(type) {
+			case *events.Message:
+				dup := cloneMessageEvent(e)
+				if dup == nil {
+					return
+				}
+				go b.Events.HandleMessage(context.Background(), instanceName, dup)
+
+			case *events.Receipt:
+				if b.ReceiptEvents != nil {
+					go b.ReceiptEvents.HandleReceipt(context.Background(), instanceName, e)
+				}
 			}
-			dup := cloneMessageEvent(messageEvt)
-			if dup == nil {
-				return
-			}
-			go b.Events.HandleMessage(context.Background(), instanceName, dup)
 		})
 	} else {
 		client.AddEventHandler(func(evt any) {})
