@@ -1,78 +1,83 @@
 @echo off
-REM Script para executar migrations no PostgreSQL - Windows
+REM Script para executar migrations usando Docker - Windows
 REM Uso: migrate.bat
 
 echo ========================================
 echo   WhatsApp API - Database Migration
+echo   Usando Docker Container
 echo ========================================
 echo.
 
-REM Carregar variáveis de ambiente do .env
-if exist .env (
-    echo Carregando configurações do .env...
-    for /f "tokens=1,2 delims==" %%a in (.env) do (
-        if "%%a"=="DATABASE_DSN" set DATABASE_DSN=%%b
-        if "%%a"=="DB_DRIVER" set DB_DRIVER=%%b
-    )
-) else (
-    echo ERRO: Arquivo .env não encontrado!
-    echo Crie um arquivo .env com DATABASE_DSN configurado
+REM Verificar se Docker está rodando
+docker info >nul 2>&1
+if errorlevel 1 (
+    echo ERRO: Docker nao esta rodando ou nao esta instalado!
+    echo Por favor, inicie o Docker Desktop e tente novamente.
     pause
     exit /b 1
 )
 
-if "%DB_DRIVER%"=="postgres" (
-    echo Driver: PostgreSQL
-) else (
-    echo AVISO: DB_DRIVER não está configurado como 'postgres'
-    echo Este script é para PostgreSQL. Pressione Ctrl+C para cancelar.
-    pause
+REM Verificar se o container do PostgreSQL está rodando
+docker ps | findstr whatsapp-postgres >nul 2>&1
+if errorlevel 1 (
+    echo AVISO: Container PostgreSQL nao esta rodando!
+    echo Iniciando containers...
+    docker-compose up -d postgres
+    echo Aguardando PostgreSQL inicializar...
+    timeout /t 10 /nobreak >nul
 )
 
 echo.
-echo Procurando arquivos de migration...
+echo Verificando conexao com o banco de dados...
+docker exec whatsapp-postgres pg_isready -U whatsapp >nul 2>&1
+if errorlevel 1 (
+    echo ERRO: Nao foi possivel conectar ao PostgreSQL!
+    echo Verifique se o container esta rodando: docker ps
+    pause
+    exit /b 1
+)
+
+echo ✓ Conexao com PostgreSQL OK
+echo.
+
+REM Procurar arquivos de migration
 set MIGRATION_DIR=internal\platform\database\migrations
 if not exist "%MIGRATION_DIR%" (
-    echo ERRO: Diretório de migrations não encontrado: %MIGRATION_DIR%
+    echo ERRO: Diretorio de migrations nao encontrado: %MIGRATION_DIR%
     pause
     exit /b 1
 )
 
-echo.
 echo Arquivos de migration encontrados:
 dir /b "%MIGRATION_DIR%\*.sql"
 
 echo.
 echo ========================================
-echo ATENÇÃO: Este script irá executar as migrations no banco de dados.
-echo DATABASE_DSN: %DATABASE_DSN%
+echo ATENCAO: Este script ira executar as migrations no banco de dados.
+echo Container: whatsapp-postgres
+echo Banco: whatsapp_db
+echo Usuario: whatsapp
 echo.
 set /p CONFIRM="Deseja continuar? (S/N): "
 if /i not "%CONFIRM%"=="S" (
-    echo Operação cancelada.
+    echo Operacao cancelada.
     exit /b 0
 )
 
 echo.
-echo Executando migrations...
+echo Executando migrations via Docker...
 echo.
 
-REM Extrair detalhes da connection string
-REM Formato esperado: postgresql://user:password@host:port/database
-for /f "tokens=1,2,3 delims=:/@" %%a in ("%DATABASE_DSN%") do (
-    set DB_USER=%%b
-    set DB_PASS=%%c
-)
-
-REM Executar cada arquivo SQL
+REM Executar cada arquivo SQL no container
 for %%f in ("%MIGRATION_DIR%\*.sql") do (
     echo.
     echo --------------------------------------------------
     echo Executando: %%~nxf
     echo --------------------------------------------------
     
-    REM Usar psql para executar o SQL
-    psql "%DATABASE_DSN%" -f "%%f"
+    REM Copiar arquivo SQL para o container e executar
+    docker cp "%%f" whatsapp-postgres:/tmp/migration.sql
+    docker exec whatsapp-postgres psql -U whatsapp -d whatsapp_db -f /tmp/migration.sql
     
     if errorlevel 1 (
         echo ERRO ao executar %%~nxf
@@ -81,10 +86,19 @@ for %%f in ("%MIGRATION_DIR%\*.sql") do (
     ) else (
         echo ✓ %%~nxf executado com sucesso!
     )
+    
+    REM Limpar arquivo temporario
+    docker exec whatsapp-postgres rm /tmp/migration.sql
 )
 
 echo.
 echo ========================================
 echo ✓ Todas as migrations foram executadas com sucesso!
 echo ========================================
+echo.
+echo Verificando tabelas criadas...
+docker exec whatsapp-postgres psql -U whatsapp -d whatsapp_db -c "\dt message_*"
+
+echo.
+echo Pronto! As tabelas de analytics estao disponiveis.
 pause
