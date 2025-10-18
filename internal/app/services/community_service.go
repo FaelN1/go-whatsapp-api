@@ -711,18 +711,26 @@ func normalizeCommunityImage(data []byte) ([]byte, error) {
 		return nil, errCommunityImageInvalid
 	}
 
-	img, _, err := image.Decode(bytes.NewReader(data))
+	// Verify it's a valid image by attempting to decode
+	img, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, errCommunityImageInvalid
+		return nil, fmt.Errorf("%w: %v", errCommunityImageInvalid, err)
 	}
 
-	for quality := 90; quality >= 50; quality -= 5 {
+	// If already JPEG and within size limit, return as-is
+	if format == "jpeg" && len(data) <= maxCommunityImageBytes {
+		return data, nil
+	}
+
+	// Re-encode as JPEG with progressive quality reduction if needed
+	for quality := 90; quality >= 50; quality -= 10 {
 		var buf bytes.Buffer
 		if encodeErr := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); encodeErr != nil {
 			return nil, fmt.Errorf("failed to encode community image: %w", encodeErr)
 		}
-		if buf.Len() <= maxCommunityImageBytes {
-			return buf.Bytes(), nil
+		result := buf.Bytes()
+		if len(result) <= maxCommunityImageBytes {
+			return result, nil
 		}
 	}
 
