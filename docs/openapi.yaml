@@ -21,6 +21,8 @@ tags:
     description: Configuração de webhooks (Evolution API compatible)
   - name: Settings
     description: Ajustes de comportamento da instância (Evolution API compatible)
+  - name: Analytics
+    description: Métricas e rastreamento de mensagens enviadas
 paths:
   /health:
     get:
@@ -1566,6 +1568,75 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SendTextResponse'
+  /analytics/messages/{trackId}/metrics:
+    get:
+      tags:
+        - Analytics
+      summary: Obter métricas detalhadas de uma mensagem
+      description: Retorna métricas completas incluindo visualizações e reações de uma mensagem rastreada
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: trackId
+          required: true
+          schema:
+            type: string
+          description: ID do rastreamento da mensagem
+      responses:
+        '200':
+          description: Métricas da mensagem
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageMetrics'
+        '401':
+          description: Não autorizado
+        '404':
+          description: Mensagem não encontrada
+        '500':
+          description: Erro interno
+  /analytics/instances/{instanceId}/metrics:
+    get:
+      tags:
+        - Analytics
+      summary: Obter resumo de métricas de uma instância
+      description: Retorna lista paginada de mensagens enviadas pela instância com contadores de visualizações e reações
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            type: string
+          description: ID da instância
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+          description: Número máximo de mensagens a retornar
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+          description: Offset para paginação
+      responses:
+        '200':
+          description: Resumo de métricas da instância
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceMetrics'
+        '401':
+          description: Não autorizado
+        '500':
+          description: Erro interno
 components:
   securitySchemes:
     bearerAuth:
@@ -2627,6 +2698,164 @@ components:
         status:
           type: string
           description: Confirmação da atualização (ex. success)
+    MessageTracking:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID único do rastreamento
+        instanceId:
+          type: string
+          description: ID da instância que enviou
+        messageId:
+          type: string
+          description: ID da mensagem no WhatsApp
+        remoteJid:
+          type: string
+          description: JID do destinatário
+        communityJid:
+          type: string
+          description: JID da comunidade (se aplicável)
+        messageType:
+          type: string
+          description: Tipo da mensagem (conversation, imageMessage, etc)
+        content:
+          type: string
+          description: Conteúdo textual da mensagem
+        mediaUrl:
+          type: string
+          description: URL da mídia (se aplicável)
+        caption:
+          type: string
+          description: Legenda da mídia (se aplicável)
+        sentAt:
+          type: string
+          format: date-time
+          description: Data e hora de envio
+        createdAt:
+          type: string
+          format: date-time
+          description: Data e hora de criação do registro
+    MessageView:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID único da visualização
+        messageTrackId:
+          type: string
+          description: ID do rastreamento da mensagem
+        viewerJid:
+          type: string
+          description: JID de quem visualizou
+        viewerName:
+          type: string
+          description: Nome de quem visualizou
+        viewedAt:
+          type: string
+          format: date-time
+          description: Data e hora da visualização
+        createdAt:
+          type: string
+          format: date-time
+          description: Data e hora de criação do registro
+    MessageReaction:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID único da reação
+        messageTrackId:
+          type: string
+          description: ID do rastreamento da mensagem
+        reactorJid:
+          type: string
+          description: JID de quem reagiu
+        reactorName:
+          type: string
+          description: Nome de quem reagiu
+        reaction:
+          type: string
+          description: Emoji da reação
+        reactedAt:
+          type: string
+          format: date-time
+          description: Data e hora da reação
+        createdAt:
+          type: string
+          format: date-time
+          description: Data e hora de criação do registro
+    MessageMetrics:
+      type: object
+      properties:
+        message:
+          $ref: '#/components/schemas/MessageTracking'
+        viewCount:
+          type: integer
+          description: Número total de visualizações
+        reactionCount:
+          type: integer
+          description: Número total de reações
+        views:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageView'
+          description: Lista de visualizações
+        reactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageReaction'
+          description: Lista de reações
+    MessageMetricsSummary:
+      type: object
+      properties:
+        messageId:
+          type: string
+          description: ID da mensagem no WhatsApp
+        remoteJid:
+          type: string
+          description: JID do destinatário
+        messageType:
+          type: string
+          description: Tipo da mensagem
+        sentAt:
+          type: string
+          format: date-time
+          description: Data e hora de envio
+        viewCount:
+          type: integer
+          description: Número de visualizações
+        reactionCount:
+          type: integer
+          description: Número de reações
+        topReactions:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Mapa de emojis para contagens
+    InstanceMetrics:
+      type: object
+      properties:
+        instanceId:
+          type: string
+          description: ID da instância
+        limit:
+          type: integer
+          description: Limite de resultados
+        offset:
+          type: integer
+          description: Offset da paginação
+        count:
+          type: integer
+          description: Número de mensagens retornadas
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageMetricsSummary'
+          description: Lista de métricas resumidas
+
+
+
 
 
 
