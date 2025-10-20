@@ -20,6 +20,7 @@ type AppConfig struct {
 	Postgres                  PostgresConfig
 	Storage                   StorageConfig
 	CommunityEventsWebhookURL string
+	CommunityEventsToken      string
 }
 
 type PostgresConfig struct {
@@ -125,6 +126,7 @@ func Load() *AppConfig {
 		Postgres:                  pg,
 		Storage:                   storage,
 		CommunityEventsWebhookURL: strings.TrimSpace(getEnv("COMMUNITY_EVENTS_WEBHOOK_URL", "")),
+		CommunityEventsToken:      strings.TrimSpace(getEnv("COMMUNITY_EVENTS_BEARER_TOKEN", "")),
 	}
 	return cfg
 }

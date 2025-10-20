@@ -98,7 +98,7 @@ func main() {
 	waMgr := whatsapp.NewManager(loggers.App.Sub("WA"))
 	storeFactory := whatsapp.NewStoreFactory(cfg.DataDir, loggers.App.Sub("Store"))
 	webhookDispatcher := services.NewWebhookDispatcher(nil, loggers.App.Sub("Webhook"))
-	communityEventsDispatcher := services.NewCommunityEventsDispatcher(cfg.CommunityEventsWebhookURL, nil, loggers.App.Sub("CommunityWebhook"))
+	communityEventsDispatcher := services.NewCommunityEventsDispatcher(cfg.CommunityEventsWebhookURL, cfg.CommunityEventsToken, nil, loggers.App.Sub("CommunityWebhook"))
 
 	var analyticsSvc services.AnalyticsService
 	if analyticsRepo != nil {

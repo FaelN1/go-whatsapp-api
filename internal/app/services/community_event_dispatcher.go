@@ -22,15 +22,17 @@ type communityEventsDispatcher struct {
 	client *http.Client
 	url    string
 	log    waLog.Logger
+	token  string
 }
 
 // NewCommunityEventsDispatcher cria um dispatcher com URL fixa (via env).
-func NewCommunityEventsDispatcher(url string, client *http.Client, log waLog.Logger) CommunityEventsDispatcher {
+func NewCommunityEventsDispatcher(url, token string, client *http.Client, log waLog.Logger) CommunityEventsDispatcher {
 	cleanURL := strings.TrimSpace(url)
+	cleanToken := strings.TrimSpace(token)
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &communityEventsDispatcher{client: client, url: cleanURL, log: log}
+	return &communityEventsDispatcher{client: client, url: cleanURL, log: log, token: cleanToken}
 }
 
 func (d *communityEventsDispatcher) Dispatch(ctx context.Context, events []community.MembershipEvent) error {
@@ -57,6 +59,9 @@ func (d *communityEventsDispatcher) Dispatch(ctx context.Context, events []commu
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if d.token != "" {
+		req.Header.Set("Authorization", "Bearer "+d.token)
+	}
 
 	if d.log != nil {
 		d.log.Debugf("enviando %d evento(s) de comunidade para %s", len(events), target)
