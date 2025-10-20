@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/faeln1/go-whatsapp-api/internal/platform/whatsapp"
+	"github.com/faeln1/go-whatsapp-api/pkg/eventlog"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waWeb"
@@ -29,10 +30,11 @@ type SessionBootstrap struct {
 	Events        MessageEventListener
 	ReceiptEvents ReceiptEventListener
 	GroupEvents   CommunityEventListener
+	EventLogger   *eventlog.Writer
 }
 
-func NewSessionBootstrap(f *whatsapp.StoreFactory, m *whatsapp.Manager, log waLog.Logger, events MessageEventListener) *SessionBootstrap {
-	return &SessionBootstrap{StoreFactory: f, Manager: m, Log: log, Events: events}
+func NewSessionBootstrap(f *whatsapp.StoreFactory, m *whatsapp.Manager, log waLog.Logger, events MessageEventListener, eventLogger *eventlog.Writer) *SessionBootstrap {
+	return &SessionBootstrap{StoreFactory: f, Manager: m, Log: log, Events: events, EventLogger: eventLogger}
 }
 
 // InitNewSession cria (ou carrega) device store e gera QR channel se necessário.
@@ -47,8 +49,11 @@ func (b *SessionBootstrap) InitNewSession(ctx context.Context, instanceName stri
 	}
 	client := whatsmeow.NewClient(device, b.Log.Sub("Client"))
 
-	if b.Events != nil || b.ReceiptEvents != nil || b.GroupEvents != nil {
+	if b.Events != nil || b.ReceiptEvents != nil || b.GroupEvents != nil || (b.EventLogger != nil && b.EventLogger.Enabled()) {
 		client.AddEventHandler(func(evt any) {
+			if b.EventLogger != nil && b.EventLogger.Enabled() {
+				go b.writeEventLog(instanceName, evt)
+			}
 			switch e := evt.(type) {
 			case *events.Message:
 				if b.Events == nil {
@@ -142,4 +147,13 @@ func cloneGroupInfoEvent(evt *events.GroupInfo) *events.GroupInfo {
 		dup.Leave = append([]types.JID(nil), evt.Leave...)
 	}
 	return &dup
+}
+
+func (b *SessionBootstrap) writeEventLog(instanceName string, evt any) {
+	if b.EventLogger == nil || !b.EventLogger.Enabled() || evt == nil {
+		return
+	}
+	if err := b.EventLogger.Write(instanceName, evt); err != nil && b.Log != nil {
+		b.Log.Warnf("event log write failed for %s: %v", instanceName, err)
+	}
 }

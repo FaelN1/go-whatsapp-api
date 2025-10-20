@@ -17,6 +17,7 @@ import (
 	"github.com/faeln1/go-whatsapp-api/internal/platform/database"
 	httpPlatform "github.com/faeln1/go-whatsapp-api/internal/platform/http"
 	"github.com/faeln1/go-whatsapp-api/internal/platform/whatsapp"
+	"github.com/faeln1/go-whatsapp-api/pkg/eventlog"
 	"github.com/faeln1/go-whatsapp-api/pkg/logger"
 	storagepkg "github.com/faeln1/go-whatsapp-api/pkg/storage"
 	minioStorage "github.com/faeln1/go-whatsapp-api/pkg/storage/minio"
@@ -107,7 +108,8 @@ func main() {
 
 	messageEvents := services.NewMessageEventHandler(repo, waMgr, objectStorage, webhookDispatcher, analyticsSvc, loggers.App.Sub("Events"))
 	communityEvents := services.NewCommunityEventService(waMgr, membershipRepo, communityEventsDispatcher, loggers.App.Sub("CommunityEvents"))
-	bootstrap := services.NewSessionBootstrap(storeFactory, waMgr, loggers.App.Sub("Bootstrap"), messageEvents)
+	eventLogger := eventlog.NewWriter(cfg.EventLogDir, loggers.App.Sub("EventLog"))
+	bootstrap := services.NewSessionBootstrap(storeFactory, waMgr, loggers.App.Sub("Bootstrap"), messageEvents, eventLogger)
 	bootstrap.ReceiptEvents = messageEvents
 	bootstrap.GroupEvents = communityEvents
 

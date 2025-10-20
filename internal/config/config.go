@@ -21,6 +21,7 @@ type AppConfig struct {
 	Storage                   StorageConfig
 	CommunityEventsWebhookURL string
 	CommunityEventsToken      string
+	EventLogDir               string
 }
 
 type PostgresConfig struct {
@@ -127,6 +128,13 @@ func Load() *AppConfig {
 		Storage:                   storage,
 		CommunityEventsWebhookURL: strings.TrimSpace(getEnv("COMMUNITY_EVENTS_WEBHOOK_URL", "")),
 		CommunityEventsToken:      strings.TrimSpace(getEnv("COMMUNITY_EVENTS_BEARER_TOKEN", "")),
+		EventLogDir:               strings.TrimSpace(getEnv("EVENT_LOG_DIR", "")),
+	}
+	if strings.EqualFold(cfg.EventLogDir, "off") || strings.EqualFold(cfg.EventLogDir, "disabled") {
+		cfg.EventLogDir = ""
+	}
+	if cfg.EventLogDir == "" {
+		cfg.EventLogDir = "event_logs"
 	}
 	return cfg
 }
