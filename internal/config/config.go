@@ -9,16 +9,17 @@ import (
 )
 
 type AppConfig struct {
-	HTTPPort      string
-	Env           string
-	DatabaseDSN   string
-	DBDriver      string
-	SwaggerEnable bool
-	DataDir       string
-	SkipWAConnect bool
-	MasterToken   string
-	Postgres      PostgresConfig
-	Storage       StorageConfig
+	HTTPPort                  string
+	Env                       string
+	DatabaseDSN               string
+	DBDriver                  string
+	SwaggerEnable             bool
+	DataDir                   string
+	SkipWAConnect             bool
+	MasterToken               string
+	Postgres                  PostgresConfig
+	Storage                   StorageConfig
+	CommunityEventsWebhookURL string
 }
 
 type PostgresConfig struct {
@@ -113,16 +114,17 @@ func Load() *AppConfig {
 	}
 
 	cfg := &AppConfig{
-		HTTPPort:      getEnv("HTTP_PORT", "8080"),
-		Env:           getEnv("APP_ENV", "development"),
-		DatabaseDSN:   dsn,
-		DBDriver:      driver,
-		SwaggerEnable: getEnv("SWAGGER_ENABLE", "true") == "true",
-		DataDir:       getEnv("DATA_DIR", "data"),
-		SkipWAConnect: getEnv("WA_SKIP_CONNECT", "false") == "true",
-		MasterToken:   getEnv("API_MASTER_TOKEN", ""),
-		Postgres:      pg,
-		Storage:       storage,
+		HTTPPort:                  getEnv("HTTP_PORT", "8080"),
+		Env:                       getEnv("APP_ENV", "development"),
+		DatabaseDSN:               dsn,
+		DBDriver:                  driver,
+		SwaggerEnable:             getEnv("SWAGGER_ENABLE", "true") == "true",
+		DataDir:                   getEnv("DATA_DIR", "data"),
+		SkipWAConnect:             getEnv("WA_SKIP_CONNECT", "false") == "true",
+		MasterToken:               getEnv("API_MASTER_TOKEN", ""),
+		Postgres:                  pg,
+		Storage:                   storage,
+		CommunityEventsWebhookURL: strings.TrimSpace(getEnv("COMMUNITY_EVENTS_WEBHOOK_URL", "")),
 	}
 	return cfg
 }

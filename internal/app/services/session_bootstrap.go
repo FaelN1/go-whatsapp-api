@@ -8,6 +8,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waWeb"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
@@ -27,6 +28,7 @@ type SessionBootstrap struct {
 	Log           waLog.Logger
 	Events        MessageEventListener
 	ReceiptEvents ReceiptEventListener
+	GroupEvents   CommunityEventListener
 }
 
 func NewSessionBootstrap(f *whatsapp.StoreFactory, m *whatsapp.Manager, log waLog.Logger, events MessageEventListener) *SessionBootstrap {
@@ -45,10 +47,13 @@ func (b *SessionBootstrap) InitNewSession(ctx context.Context, instanceName stri
 	}
 	client := whatsmeow.NewClient(device, b.Log.Sub("Client"))
 
-	if b.Events != nil {
+	if b.Events != nil || b.ReceiptEvents != nil || b.GroupEvents != nil {
 		client.AddEventHandler(func(evt any) {
 			switch e := evt.(type) {
 			case *events.Message:
+				if b.Events == nil {
+					return
+				}
 				dup := cloneMessageEvent(e)
 				if dup == nil {
 					return
@@ -59,6 +64,16 @@ func (b *SessionBootstrap) InitNewSession(ctx context.Context, instanceName stri
 				if b.ReceiptEvents != nil {
 					go b.ReceiptEvents.HandleReceipt(context.Background(), instanceName, e)
 				}
+
+			case *events.GroupInfo:
+				if b.GroupEvents == nil {
+					return
+				}
+				dup := cloneGroupInfoEvent(e)
+				if dup == nil {
+					return
+				}
+				go b.GroupEvents.HandleGroupInfo(context.Background(), instanceName, dup)
 			}
 		})
 	} else {
@@ -111,6 +126,20 @@ func cloneMessageEvent(evt *events.Message) *events.Message {
 		if raw, ok := proto.Clone(evt.SourceWebMsg).(*waWeb.WebMessageInfo); ok {
 			dup.SourceWebMsg = raw
 		}
+	}
+	return &dup
+}
+
+func cloneGroupInfoEvent(evt *events.GroupInfo) *events.GroupInfo {
+	if evt == nil {
+		return nil
+	}
+	dup := *evt
+	if len(evt.Join) > 0 {
+		dup.Join = append([]types.JID(nil), evt.Join...)
+	}
+	if len(evt.Leave) > 0 {
+		dup.Leave = append([]types.JID(nil), evt.Leave...)
 	}
 	return &dup
 }

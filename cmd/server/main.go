@@ -98,6 +98,7 @@ func main() {
 	waMgr := whatsapp.NewManager(loggers.App.Sub("WA"))
 	storeFactory := whatsapp.NewStoreFactory(cfg.DataDir, loggers.App.Sub("Store"))
 	webhookDispatcher := services.NewWebhookDispatcher(nil, loggers.App.Sub("Webhook"))
+	communityEventsDispatcher := services.NewCommunityEventsDispatcher(cfg.CommunityEventsWebhookURL, nil, loggers.App.Sub("CommunityWebhook"))
 
 	var analyticsSvc services.AnalyticsService
 	if analyticsRepo != nil {
@@ -105,8 +106,10 @@ func main() {
 	}
 
 	messageEvents := services.NewMessageEventHandler(repo, waMgr, objectStorage, webhookDispatcher, analyticsSvc, loggers.App.Sub("Events"))
+	communityEvents := services.NewCommunityEventService(waMgr, membershipRepo, communityEventsDispatcher, loggers.App.Sub("CommunityEvents"))
 	bootstrap := services.NewSessionBootstrap(storeFactory, waMgr, loggers.App.Sub("Bootstrap"), messageEvents)
 	bootstrap.ReceiptEvents = messageEvents
+	bootstrap.GroupEvents = communityEvents
 
 	instanceSvc := services.NewInstanceService(repo, waMgr, objectStorage)
 	messageSvc := services.NewMessageService(waMgr, objectStorage)
