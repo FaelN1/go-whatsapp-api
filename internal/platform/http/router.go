@@ -363,6 +363,34 @@ func NewRouter(cfg RouterConfig) stdhttp.Handler {
 				}
 				w.WriteHeader(stdhttp.StatusMethodNotAllowed)
 				return
+			case "name":
+				if len(subPath) == 1 && r.Method == stdhttp.MethodPatch {
+					cfg.CommunityCtrl.UpdateName(w, r, instanceName, communityID)
+					return
+				}
+				w.WriteHeader(stdhttp.StatusMethodNotAllowed)
+				return
+			case "description":
+				if len(subPath) == 1 && r.Method == stdhttp.MethodPatch {
+					cfg.CommunityCtrl.UpdateDescription(w, r, instanceName, communityID)
+					return
+				}
+				w.WriteHeader(stdhttp.StatusMethodNotAllowed)
+				return
+			case "admins":
+				if len(subPath) == 1 && r.Method == stdhttp.MethodPost {
+					cfg.CommunityCtrl.PromoteAdmins(w, r, instanceName, communityID)
+					return
+				}
+				w.WriteHeader(stdhttp.StatusMethodNotAllowed)
+				return
+			case "image":
+				if len(subPath) == 1 && r.Method == stdhttp.MethodPatch {
+					cfg.CommunityCtrl.UpdateImage(w, r, instanceName, communityID)
+					return
+				}
+				w.WriteHeader(stdhttp.StatusMethodNotAllowed)
+				return
 			case "announce":
 				if len(subPath) == 1 && r.Method == stdhttp.MethodPost {
 					cfg.CommunityCtrl.SendAnnouncement(w, r, instanceName, communityID)

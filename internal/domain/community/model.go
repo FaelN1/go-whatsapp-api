@@ -10,6 +10,31 @@ type CreateInput struct {
 	Participants []string `json:"participants,omitempty"`
 }
 
+// UpdateNameInput recebe o novo nome da comunidade.
+type UpdateNameInput struct {
+	Name string `json:"name"`
+}
+
+// UpdateDescriptionInput recebe a nova descrição da comunidade.
+type UpdateDescriptionInput struct {
+	Description string `json:"description"`
+}
+
+// PromoteAdminsInput lista os membros que devem ser promovidos a administradores.
+type PromoteAdminsInput struct {
+	Members []string `json:"members"`
+}
+
+// PromoteAdminsOutput detalha os membros promovidos a administradores.
+type PromoteAdminsOutput struct {
+	Promoted []Member `json:"promoted"`
+}
+
+// UpdateImageInput recebe a nova imagem (URL ou base64) da comunidade.
+type UpdateImageInput struct {
+	Image string `json:"image"`
+}
+
 // Community holds basic community metadata returned to clients.
 type Community struct {
 	JID                string    `json:"jid"`

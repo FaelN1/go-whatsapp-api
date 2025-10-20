@@ -25,12 +25,14 @@ import (
 )
 
 var (
-	errInstanceNotFound      = errors.New("instance not found")
-	errClientNotReady        = errors.New("instance client not ready")
-	errClientNotConnected    = errors.New("instance not connected")
-	errCommunityNameEmpty    = errors.New("community name is required")
-	errAnnouncementEmpty     = errors.New("announcement text is required")
-	errAnnouncementNoTargets = errors.New("no target communities provided")
+	errInstanceNotFound          = errors.New("instance not found")
+	errClientNotReady            = errors.New("instance client not ready")
+	errClientNotConnected        = errors.New("instance not connected")
+	errCommunityNameEmpty        = errors.New("community name is required")
+	errCommunityDescriptionEmpty = errors.New("community description is required")
+	errAnnouncementEmpty         = errors.New("announcement text is required")
+	errAnnouncementNoTargets     = errors.New("no target communities provided")
+	errCommunityAdminsEmpty      = errors.New("at least one member must be provided")
 	// ErrCommunityAccessDenied is returned when the account does not have access to the target community.
 	ErrCommunityAccessDenied = errors.New("community access denied")
 	// ErrCommunityInviteLink is returned when WhatsApp refuses to provide or reset the invite link.
@@ -52,6 +54,10 @@ type CommunityService interface {
 	ListMembers(ctx context.Context, instanceID, communityJID string) (community.Members, error)
 	SendAnnouncement(ctx context.Context, instanceID string, communityIDs []string, in community.SendAnnouncementInput) ([]AnnouncementResult, error)
 	FetchInvite(ctx context.Context, instanceID, communityJID string, reset bool) (community.InviteResponse, error)
+	UpdateName(ctx context.Context, instanceID, communityJID, name string) (*community.Community, error)
+	UpdateDescription(ctx context.Context, instanceID, communityJID, description string) (*community.Community, error)
+	PromoteAdmins(ctx context.Context, instanceID, communityJID string, members []string) (community.PromoteAdminsOutput, error)
+	UpdateImage(ctx context.Context, instanceID, communityJID, image string) (*community.Community, error)
 }
 
 // AnnouncementResult captures the dispatch outcome for a single community announcement.
@@ -352,6 +358,165 @@ func (s *communityService) FetchInvite(ctx context.Context, instanceID, communit
 	return out, nil
 }
 
+func (s *communityService) UpdateName(ctx context.Context, instanceID, communityJID, name string) (*community.Community, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return nil, errCommunityNameEmpty
+	}
+
+	sess, err := s.readySession(instanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	jid, err := parseJID(communityJID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := sess.Client.SetGroupName(jid, trimmed); err != nil {
+		if errors.Is(err, whatsmeow.ErrNotInGroup) {
+			return nil, ErrCommunityAccessDenied
+		}
+		return nil, err
+	}
+
+	info, err := sess.Client.GetGroupInfo(jid)
+	if err != nil {
+		if errors.Is(err, whatsmeow.ErrNotInGroup) {
+			return nil, ErrCommunityAccessDenied
+		}
+		return nil, err
+	}
+
+	comm := s.buildCommunityResponse(sess.Client, info)
+	return &comm, nil
+}
+
+func (s *communityService) UpdateDescription(ctx context.Context, instanceID, communityJID, description string) (*community.Community, error) {
+	trimmed := strings.TrimSpace(description)
+	if trimmed == "" {
+		return nil, errCommunityDescriptionEmpty
+	}
+
+	sess, err := s.readySession(instanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	jid, err := parseJID(communityJID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := sess.Client.SetGroupDescription(jid, trimmed); err != nil {
+		if errors.Is(err, whatsmeow.ErrNotInGroup) {
+			return nil, ErrCommunityAccessDenied
+		}
+		return nil, err
+	}
+
+	info, err := sess.Client.GetGroupInfo(jid)
+	if err != nil {
+		if errors.Is(err, whatsmeow.ErrNotInGroup) {
+			return nil, ErrCommunityAccessDenied
+		}
+		return nil, err
+	}
+
+	comm := s.buildCommunityResponse(sess.Client, info)
+	return &comm, nil
+}
+
+func (s *communityService) PromoteAdmins(ctx context.Context, instanceID, communityJID string, members []string) (community.PromoteAdminsOutput, error) {
+	var out community.PromoteAdminsOutput
+
+	sess, err := s.readySession(instanceID)
+	if err != nil {
+		return out, err
+	}
+
+	jid, err := parseJID(communityJID)
+	if err != nil {
+		return out, err
+	}
+
+	parsed, err := s.parseParticipants(members)
+	if err != nil {
+		return out, err
+	}
+	if len(parsed) == 0 {
+		return out, errCommunityAdminsEmpty
+	}
+
+	updated, err := sess.Client.UpdateGroupParticipants(jid, parsed, whatsmeow.ParticipantChangePromote)
+	if err != nil {
+		if errors.Is(err, whatsmeow.ErrNotInGroup) {
+			return out, ErrCommunityAccessDenied
+		}
+		return out, err
+	}
+
+	out.Promoted = make([]community.Member, 0, len(updated))
+	for _, participant := range updated {
+		jidStr, phone := s.resolveMemberContact(ctx, sess.Client, participant.JID)
+		member := community.Member{
+			JID:     strings.TrimSpace(jidStr),
+			Phone:   strings.TrimSpace(phone),
+			IsAdmin: participant.IsAdmin || participant.IsSuperAdmin,
+		}
+		if participant.DisplayName != "" {
+			member.DisplayName = strings.TrimSpace(participant.DisplayName)
+		}
+		out.Promoted = append(out.Promoted, member)
+	}
+
+	return out, nil
+}
+
+func (s *communityService) UpdateImage(ctx context.Context, instanceID, communityJID, image string) (*community.Community, error) {
+	source := strings.TrimSpace(image)
+	if source == "" {
+		return nil, errCommunityImageInvalid
+	}
+
+	sess, err := s.readySession(instanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	jid, err := parseJID(communityJID)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := decodeImage(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errCommunityImageInvalid
+	}
+
+	if _, err := sess.Client.SetGroupPhoto(jid, data); err != nil {
+		if errors.Is(err, whatsmeow.ErrNotInGroup) {
+			return nil, ErrCommunityAccessDenied
+		}
+		return nil, err
+	}
+
+	info, err := sess.Client.GetGroupInfo(jid)
+	if err != nil {
+		if errors.Is(err, whatsmeow.ErrNotInGroup) {
+			return nil, ErrCommunityAccessDenied
+		}
+		return nil, err
+	}
+
+	comm := s.buildCommunityResponse(sess.Client, info)
+	return &comm, nil
+}
+
 func (s *communityService) resolveMemberContact(ctx context.Context, client *whatsmeow.Client, member types.JID) (string, string) {
 	if client == nil {
 		return member.String(), ""
@@ -365,6 +530,22 @@ func (s *communityService) resolveMemberContact(ctx context.Context, client *wha
 		return member.String(), member.User
 	}
 	return member.String(), ""
+}
+
+func (s *communityService) buildCommunityResponse(client *whatsmeow.Client, info *types.GroupInfo) community.Community {
+	if info == nil {
+		return community.Community{}
+	}
+
+	memberCount := len(info.Participants)
+	if info.IsParent && client != nil {
+		if participants, err := client.GetLinkedGroupsParticipants(info.JID); err == nil {
+			memberCount = len(participants)
+		}
+	}
+
+	announcement, defaultSub := s.resolveDefaultSubGroup(client, info.JID)
+	return toCommunity(info, memberCount, announcement, defaultSub)
 }
 
 func (s *communityService) SendAnnouncement(ctx context.Context, instanceID string, communityIDs []string, in community.SendAnnouncementInput) ([]AnnouncementResult, error) {

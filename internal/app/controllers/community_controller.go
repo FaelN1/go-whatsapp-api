@@ -131,6 +131,70 @@ func (c *CommunityController) SendAnnouncement(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusAccepted, results)
 }
 
+func (c *CommunityController) UpdateName(w http.ResponseWriter, r *http.Request, instance, communityID string) {
+	var in community.UpdateNameInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	jid := decodePathSegment(communityID)
+	comm, err := c.service.UpdateName(r.Context(), instance, jid, in.Name)
+	if err != nil {
+		writeError(w, mapCommunityStatus(err), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, comm)
+}
+
+func (c *CommunityController) UpdateDescription(w http.ResponseWriter, r *http.Request, instance, communityID string) {
+	var in community.UpdateDescriptionInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	jid := decodePathSegment(communityID)
+	comm, err := c.service.UpdateDescription(r.Context(), instance, jid, in.Description)
+	if err != nil {
+		writeError(w, mapCommunityStatus(err), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, comm)
+}
+
+func (c *CommunityController) PromoteAdmins(w http.ResponseWriter, r *http.Request, instance, communityID string) {
+	var in community.PromoteAdminsInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	jid := decodePathSegment(communityID)
+	resp, err := c.service.PromoteAdmins(r.Context(), instance, jid, in.Members)
+	if err != nil {
+		writeError(w, mapCommunityStatus(err), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (c *CommunityController) UpdateImage(w http.ResponseWriter, r *http.Request, instance, communityID string) {
+	var in community.UpdateImageInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	jid := decodePathSegment(communityID)
+	comm, err := c.service.UpdateImage(r.Context(), instance, jid, in.Image)
+	if err != nil {
+		writeError(w, mapCommunityStatus(err), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, comm)
+}
+
 func decodePathSegment(raw string) string {
 	value, err := url.PathUnescape(raw)
 	if err != nil {
