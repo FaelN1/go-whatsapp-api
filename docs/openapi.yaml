@@ -480,10 +480,155 @@ paths:
                 $ref: '#/components/schemas/InviteCodeResponse'
         '400': { description: Requisição inválida }
         '401': { description: Não autorizado }
-        '403': { description: Token inválido }
+        '403': { description: Acesso negado }
         '404': { description: Instância ou comunidade não encontrada }
         '409': { description: Cliente não conectado }
         '502': { description: Erro ao buscar link no WhatsApp }
+  /instances/{name}/communities/{communityId}/name:
+    patch:
+      tags:
+        - Communities
+      summary: Atualizar nome da comunidade
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: communityId
+          required: true
+          schema:
+            type: string
+          description: JID codificado da comunidade (ex. 123456-123456@g.us)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCommunityName'
+      responses:
+        '200':
+          description: Comunidade atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Community'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Acesso negado }
+        '404': { description: Instância ou comunidade não encontrada }
+  /instances/{name}/communities/{communityId}/description:
+    patch:
+      tags:
+        - Communities
+      summary: Atualizar descrição da comunidade
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: communityId
+          required: true
+          schema:
+            type: string
+          description: JID codificado da comunidade
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCommunityDescription'
+      responses:
+        '200':
+          description: Comunidade atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Community'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Acesso negado }
+        '404': { description: Instância ou comunidade não encontrada }
+  /instances/{name}/communities/{communityId}/image:
+    patch:
+      tags:
+        - Communities
+      summary: Atualizar imagem da comunidade
+      description: Substitui a foto principal da comunidade por uma imagem JPEG compatível com WhatsApp (base64, data URI ou URL pública).
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: communityId
+          required: true
+          schema:
+            type: string
+          description: JID codificado da comunidade
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCommunityImage'
+      responses:
+        '200':
+          description: Comunidade atualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Community'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Acesso negado }
+        '404': { description: Instância ou comunidade não encontrada }
+  /instances/{name}/communities/{communityId}/admins:
+    post:
+      tags:
+        - Communities
+      summary: Promover membros a administradores da comunidade
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: communityId
+          required: true
+          schema:
+            type: string
+          description: JID codificado da comunidade
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromoteCommunityAdminsRequest'
+      responses:
+        '200':
+          description: Membros promovidos com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromoteCommunityAdminsResponse'
+        '400': { description: Requisição inválida }
+        '401': { description: Não autorizado }
+        '403': { description: Acesso negado }
+        '404': { description: Instância ou comunidade não encontrada }
   /message/sendText/{instance}:
     post:
       tags:
@@ -1548,26 +1693,6 @@ paths:
         '404': { description: Instância não encontrada }
         '409': { description: Cliente não conectado }
         '500': { description: Erro ao atualizar configurações }
-  /messages/text:
-    post:
-      tags:
-        - Messages
-      summary: Enviar texto
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SendText'
-      responses:
-        '202':
-          description: Aceito
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SendTextResponse'
   /analytics/messages/{trackId}/metrics:
     get:
       tags:
@@ -1920,6 +2045,46 @@ components:
         targetJid: { type: string }
         message:
           $ref: '#/components/schemas/SendTextResponse'
+    UpdateCommunityName:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Novo nome exibido da comunidade
+    UpdateCommunityDescription:
+      type: object
+      required: [description]
+      properties:
+        description:
+          type: string
+          minLength: 1
+          description: Nova descrição pública da comunidade
+    UpdateCommunityImage:
+      type: object
+      required: [image]
+      properties:
+        image:
+          type: string
+          description: Imagem em base64, data URI (data:image/...) ou URL https acessível
+    PromoteCommunityAdminsRequest:
+      type: object
+      required: [members]
+      properties:
+        members:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            description: JID completo ou número internacional do membro
+    PromoteCommunityAdminsResponse:
+      type: object
+      properties:
+        promoted:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommunityMember'
     SendTextResponse:
       type: object
       required: [key, pushName, status, messageType, messageTimestamp, instanceId, source]
