@@ -1,24 +1,32 @@
 package database
 
 import (
-	"database/sql"
 	"fmt"
 	"time"
 
-	_ "github.com/lib/pq"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
-func Open(driver, dsn string) (*sql.DB, error) {
-	db, err := sql.Open(driver, dsn)
+func Open(dsn string) (*gorm.DB, error) {
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		return nil, fmt.Errorf("open %s connection: %w", driver, err)
+		return nil, fmt.Errorf("open postgres connection: %w", err)
 	}
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetMaxIdleConns(5)
-	db.SetMaxOpenConns(10)
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("ping %s connection: %w", driver, err)
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("get sql.DB from gorm.DB: %w", err)
 	}
+
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetMaxOpenConns(10)
+
+	if err := sqlDB.Ping(); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("ping postgres connection: %w", err)
+	}
+
 	return db, nil
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/joho/godotenv"
 	"go.mau.fi/whatsmeow"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -58,27 +59,36 @@ func main() {
 		repo           repositories.InstanceRepository
 		membershipRepo repositories.CommunityMembershipRepository
 		analyticsRepo  repositories.AnalyticsRepository
+		db             *gorm.DB
 		dbClose        func() error
 	)
 
 	switch cfg.DBDriver {
 	case "postgres":
-		log.Printf("initializing postgres repository")
-		db, err := database.Open("postgres", cfg.DatabaseDSN)
+		log.Printf("initializing postgres repository with GORM")
+		var err error
+		db, err = database.Open(cfg.DatabaseDSN)
 		if err != nil {
 			log.Fatalf("database connection error: %v", err)
 		}
-		dbClose = db.Close
-		pgRepo, err := repositories.NewPostgresInstanceRepo(db)
+		sqlDB, err := db.DB()
+		if err != nil {
+			log.Fatalf("database handle retrieval error: %v", err)
+		}
+		dbClose = sqlDB.Close
+
+		gormRepo, err := repositories.NewGormInstanceRepo(db)
 		if err != nil {
 			log.Fatalf("repository initialization error: %v", err)
 		}
-		repo = pgRepo
-		membershipRepo, err = repositories.NewPostgresCommunityMembershipRepo(db)
+		repo = gormRepo
+
+		// TODO: Refatorar os outros repositórios para GORM também
+		membershipRepo, err = repositories.NewPostgresCommunityMembershipRepo(sqlDB)
 		if err != nil {
 			log.Fatalf("membership repository initialization error: %v", err)
 		}
-		analyticsRepo = repositories.NewAnalyticsRepository(db)
+		analyticsRepo = repositories.NewAnalyticsRepository(sqlDB)
 	default:
 		log.Printf("initializing in-memory repository")
 		repo = repositories.NewInMemoryInstanceRepo()

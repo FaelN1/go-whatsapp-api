@@ -12,6 +12,7 @@ type InstanceSettings struct {
 	ReadMessages    bool   `json:"readMessages"`
 	ReadStatus      bool   `json:"readStatus"`
 	SyncFullHistory bool   `json:"syncFullHistory"`
+	WavoipToken     string `json:"wavoipToken,omitempty"`
 }
 
 type InstanceWebhook struct {
@@ -39,6 +40,7 @@ type Instance struct {
 
 // InstanceListResponse represents the full instance response following Evolution API format
 type InstanceListResponse struct {
+	// ... (o restante do arquivo permanece o mesmo)
 	ID                      string                  `json:"id"`
 	Name                    string                  `json:"name"`
 	ConnectionStatus        string                  `json:"connectionStatus"`
