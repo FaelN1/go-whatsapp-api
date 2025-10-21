@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/faeln1/go-whatsapp-api/internal/domain/analytics"
 	"github.com/google/uuid"
@@ -119,26 +121,56 @@ func (r *analyticsRepository) CreateMessageView(ctx context.Context, in analytic
 	id := uuid.New().String()
 	now := time.Now()
 
-	// Verificar se já existe visualização deste usuário
-	checkQuery := `SELECT id FROM message_views WHERE message_track_id = $1 AND viewer_jid = $2`
-	var existingID string
-	err := r.db.QueryRowContext(ctx, checkQuery, in.MessageTrackID, in.ViewerJID).Scan(&existingID)
-	if err == nil {
-		// Já existe, apenas atualizar o timestamp
+	normalizedJID := normalizeWhatsAppJID(in.ViewerJID)
+	rawJID := strings.TrimSpace(in.ViewerJID)
+	if normalizedJID == "" {
+		normalizedJID = rawJID
+	}
+
+	type existingView struct {
+		ID       string
+		ViewerID string
+	}
+
+	lookupJIDs := []string{}
+	if normalizedJID != "" {
+		lookupJIDs = append(lookupJIDs, normalizedJID)
+	}
+	if rawJID != "" && rawJID != normalizedJID {
+		lookupJIDs = append(lookupJIDs, rawJID)
+	}
+
+	checkQuery := `SELECT id, viewer_jid FROM message_views WHERE message_track_id = $1 AND viewer_jid = $2 LIMIT 1`
+	var existing existingView
+	for _, candidate := range lookupJIDs {
+		err := r.db.QueryRowContext(ctx, checkQuery, in.MessageTrackID, candidate).Scan(&existing.ID, &existing.ViewerID)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to check existing message view: %w", err)
+		}
+
 		updateQuery := `
-			UPDATE message_views 
-			SET viewed_at = $1, viewer_name = $2
-			WHERE id = $3
+			UPDATE message_views
+			SET viewed_at = $1, viewer_name = $2, viewer_jid = $3
+			WHERE id = $4
 			RETURNING id, message_track_id, viewer_jid, viewer_name, viewed_at, created_at
 		`
 		view := &analytics.MessageView{}
-		err = r.db.QueryRowContext(ctx, updateQuery, in.ViewedAt, in.ViewerName, existingID).Scan(
+		err = r.db.QueryRowContext(ctx, updateQuery, in.ViewedAt, in.ViewerName, normalizedJID, existing.ID).Scan(
 			&view.ID, &view.MessageTrackID, &view.ViewerJID, &view.ViewerName, &view.ViewedAt, &view.CreatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to update message view: %w", err)
 		}
+		view.ViewerJID = normalizeWhatsAppJID(view.ViewerJID)
 		return view, nil
+	}
+
+	insertJID := normalizedJID
+	if insertJID == "" {
+		insertJID = rawJID
 	}
 
 	query := `
@@ -149,9 +181,9 @@ func (r *analyticsRepository) CreateMessageView(ctx context.Context, in analytic
 	`
 
 	view := &analytics.MessageView{}
-	err = r.db.QueryRowContext(
+	err := r.db.QueryRowContext(
 		ctx, query,
-		id, in.MessageTrackID, in.ViewerJID, in.ViewerName, in.ViewedAt, now,
+		id, in.MessageTrackID, insertJID, in.ViewerName, in.ViewedAt, now,
 	).Scan(
 		&view.ID, &view.MessageTrackID, &view.ViewerJID, &view.ViewerName, &view.ViewedAt, &view.CreatedAt,
 	)
@@ -160,6 +192,7 @@ func (r *analyticsRepository) CreateMessageView(ctx context.Context, in analytic
 		return nil, fmt.Errorf("failed to create message view: %w", err)
 	}
 
+	view.ViewerJID = normalizeWhatsAppJID(view.ViewerJID)
 	return view, nil
 }
 
@@ -186,6 +219,7 @@ func (r *analyticsRepository) GetMessageViews(ctx context.Context, messageTrackI
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan message view: %w", err)
 		}
+		view.ViewerJID = normalizeWhatsAppJID(view.ViewerJID)
 		views = append(views, view)
 	}
 
@@ -289,6 +323,21 @@ func (r *analyticsRepository) GetMessageMetrics(ctx context.Context, messageTrac
 		return nil, err
 	}
 
+	uniqueViews := make(map[string]struct{}, len(views))
+	filteredViews := make([]analytics.MessageView, 0, len(views))
+	for _, view := range views {
+		normalized := normalizeWhatsAppJID(view.ViewerJID)
+		if normalized == "" {
+			normalized = view.ViewerJID
+		}
+		view.ViewerJID = normalized
+		if _, exists := uniqueViews[normalized]; exists {
+			continue
+		}
+		uniqueViews[normalized] = struct{}{}
+		filteredViews = append(filteredViews, view)
+	}
+
 	reactions, err := r.GetMessageReactions(ctx, messageTrackID)
 	if err != nil {
 		return nil, err
@@ -296,9 +345,9 @@ func (r *analyticsRepository) GetMessageMetrics(ctx context.Context, messageTrac
 
 	return &analytics.MessageMetrics{
 		MessageTracking: *tracking,
-		ViewCount:       len(views),
+		ViewCount:       len(uniqueViews),
 		ReactionCount:   len(reactions),
-		Views:           views,
+		Views:           filteredViews,
 		Reactions:       reactions,
 	}, nil
 }
@@ -314,8 +363,8 @@ func (r *analyticsRepository) GetInstanceMessageMetrics(ctx context.Context, ins
 			mt.remote_jid,
 			mt.message_type,
 			mt.sent_at,
-			COUNT(DISTINCT mv.id) as view_count,
-			COUNT(DISTINCT mr.id) as reaction_count
+			COUNT(DISTINCT NULLIF(split_part(split_part(COALESCE(mv.viewer_jid, ''), '@', 1), ':', 1), '')) AS view_count,
+			COUNT(DISTINCT mr.id) AS reaction_count
 		FROM message_tracking mt
 		LEFT JOIN message_views mv ON mt.id = mv.message_track_id
 		LEFT JOIN message_reactions mr ON mt.id = mr.message_track_id
@@ -345,4 +394,32 @@ func (r *analyticsRepository) GetInstanceMessageMetrics(ctx context.Context, ins
 	}
 
 	return summaries, nil
+}
+
+func normalizeWhatsAppJID(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	userPart := trimmed
+	if at := strings.Index(userPart, "@"); at != -1 {
+		userPart = userPart[:at]
+	}
+	if colon := strings.Index(userPart, ":"); colon != -1 {
+		userPart = userPart[:colon]
+	}
+
+	digits := strings.Builder{}
+	for _, r := range userPart {
+		if unicode.IsDigit(r) {
+			digits.WriteRune(r)
+		}
+	}
+
+	if digits.Len() == 0 {
+		return strings.TrimSpace(userPart)
+	}
+
+	return digits.String()
 }
