@@ -778,7 +778,7 @@ func NewRouter(cfg RouterConfig) stdhttp.Handler {
 			cfg.AnalyticsCtrl.GetInstanceMetrics(w, r, instanceID)
 		})
 
-		mux.Handle("/analytics/", analyticsMux)
+		mux.Handle("/analytics/", stdhttp.StripPrefix("/analytics", analyticsMux))
 	}
 
 	// Middlewares wrap
