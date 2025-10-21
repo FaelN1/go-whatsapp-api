@@ -102,7 +102,7 @@ while IFS= read -r -d '' file; do
   dir=$(dirname "$file")
   mtime=$(stat -c '%Y' "$file")
   current=""
-  if [[ -n ${dir_map[$dir]+x} ]]; then
+  if [[ -v dir_map[$dir] ]]; then
     current="${dir_map[$dir]}"
   fi
   dir_map[$dir]="$current$mtime::$file\n"
