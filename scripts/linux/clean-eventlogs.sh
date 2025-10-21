@@ -95,15 +95,20 @@ if (( recurse == 0 )); then
   find_opts+=( -maxdepth 1 )
 fi
 
-# shellcheck disable=SC2034
 declare -A dir_map
+found_files=0
 while IFS= read -r -d '' file; do
+  found_files=1
   dir=$(dirname "$file")
   mtime=$(stat -c '%Y' "$file")
-  dir_map[$dir]="${dir_map[$dir]}$mtime::$file\n"
+  current=""
+  if [[ -n ${dir_map[$dir]+x} ]]; then
+    current="${dir_map[$dir]}"
+  fi
+  dir_map[$dir]="$current$mtime::$file\n"
 done < <(find "$path" "${find_opts[@]}" -print0 2>/dev/null)
 
-if (( ${#dir_map[@]} == 0 )); then
+if (( ! found_files )); then
   printf 'No files found matching pattern.\n'
   exit 0
 fi
