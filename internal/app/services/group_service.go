@@ -234,16 +234,45 @@ func (s *groupService) SendInvite(ctx context.Context, in group.SendInviteInput)
 
 	caption := strings.TrimSpace(in.Description)
 	for _, target := range targets {
-		msg := &waE2E.Message{
-			GroupInviteMessage: &waE2E.GroupInviteMessage{
-				GroupJID:   proto.String(jid.String()),
-				InviteCode: proto.String(code),
-				GroupName:  proto.String(info.GroupName.Name),
+		// Build group invite message with join button
+		inviteMsg := &waE2E.GroupInviteMessage{
+			GroupJID:   proto.String(jid.String()),
+			InviteCode: proto.String(code),
+			GroupName:  proto.String(info.GroupName.Name),
+		}
+
+		if caption != "" {
+			inviteMsg.Caption = proto.String(caption)
+		}
+
+		// Add context info to enable join button
+		contextInfo := &waE2E.ContextInfo{
+			GroupMentions: []*waE2E.GroupMention{
+				{
+					GroupJID:     proto.String(jid.String()),
+					GroupSubject: proto.String(info.GroupName.Name),
+				},
 			},
 		}
-		if caption != "" {
-			msg.GroupInviteMessage.Caption = proto.String(caption)
+
+		// Build message with context for join button
+		msg := &waE2E.Message{
+			GroupInviteMessage: inviteMsg,
 		}
+
+		// Also send as extended text with button for better compatibility
+		if caption != "" {
+			msg.ExtendedTextMessage = &waE2E.ExtendedTextMessage{
+				Text:        proto.String(fmt.Sprintf("📢 *%s*\n\n%s\n\n🔗 %s", info.GroupName.Name, caption, link)),
+				ContextInfo: contextInfo,
+			}
+		} else {
+			msg.ExtendedTextMessage = &waE2E.ExtendedTextMessage{
+				Text:        proto.String(fmt.Sprintf("📢 *%s*\n\n🔗 %s", info.GroupName.Name, link)),
+				ContextInfo: contextInfo,
+			}
+		}
+
 		if _, err := sess.Client.SendMessage(ctx, target, msg); err != nil {
 			return out, fmt.Errorf("%w: %v", ErrGroupSendInvite, err)
 		}

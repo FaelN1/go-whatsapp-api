@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -65,9 +66,63 @@ func (s *messageService) SendText(ctx context.Context, in message.SendTextInput)
 		time.Sleep(time.Duration(in.Delay) * time.Millisecond)
 	}
 
-	msg := &waProto.Message{Conversation: proto.String(in.Text)}
+	var msg *waProto.Message
+	var messageType string
 
-	// TODO: Implementar linkPreview, mentionsEveryOne, mentioned, quoted
+	// Check if link preview is requested and text contains a URL
+	if in.LinkPreview && containsURL(in.Text) {
+		// Extract first URL from text
+		url := extractFirstURL(in.Text)
+		if url != "" {
+			// Try to generate link preview using enhanced method
+			preview, err := s.generateLinkPreviewEnhanced(ctx, sess, url)
+			if err == nil && preview != nil {
+				// Send as ExtendedTextMessage with preview
+				extMsg := &waProto.ExtendedTextMessage{
+					Text:        proto.String(in.Text),
+					MatchedText: proto.String(url),
+				}
+
+				if preview.Title != nil {
+					extMsg.Title = preview.Title
+				}
+				if preview.Description != nil {
+					extMsg.Description = preview.Description
+				}
+				if len(preview.JPEGThumbnail) > 0 {
+					extMsg.JPEGThumbnail = preview.JPEGThumbnail
+				}
+				if preview.ThumbnailDirectPath != nil {
+					extMsg.ThumbnailDirectPath = preview.ThumbnailDirectPath
+				}
+				if len(preview.ThumbnailSHA256) > 0 {
+					extMsg.ThumbnailSHA256 = preview.ThumbnailSHA256
+				}
+				if len(preview.ThumbnailEncSHA256) > 0 {
+					extMsg.ThumbnailEncSHA256 = preview.ThumbnailEncSHA256
+				}
+				if len(preview.MediaKey) > 0 {
+					extMsg.MediaKey = preview.MediaKey
+				}
+				if preview.MediaKeyTimestamp != nil {
+					extMsg.MediaKeyTimestamp = preview.MediaKeyTimestamp
+				}
+
+				msg = &waProto.Message{
+					ExtendedTextMessage: extMsg,
+				}
+				messageType = "extendedTextMessage"
+			}
+		}
+	}
+
+	// Fallback to simple conversation message if no preview generated
+	if msg == nil {
+		msg = &waProto.Message{Conversation: proto.String(in.Text)}
+		messageType = "conversation"
+	}
+
+	// TODO: Implementar mentionsEveryOne, mentioned, quoted
 
 	msgID, err := sess.Client.SendMessage(ctx, jid, msg)
 	if err != nil {
@@ -88,7 +143,7 @@ func (s *messageService) SendText(ctx context.Context, in message.SendTextInput)
 		PushName:         pushName,
 		Status:           "PENDING",
 		Message:          message.MessageBody{Conversation: in.Text},
-		MessageType:      "conversation",
+		MessageType:      messageType,
 		MessageTimestamp: time.Now().Unix(),
 		InstanceID:       sess.ID,
 		Source:           "unknown",
@@ -1275,4 +1330,32 @@ func parseDestinationJID(raw string) (types.JID, error) {
 		return types.JID{}, errors.New("invalid recipient")
 	}
 	return types.NewJID(digits, types.DefaultUserServer), nil
+}
+
+// URL detection and extraction helpers
+var urlRegex = regexp.MustCompile(`https?://[^\s]+`)
+
+func containsURL(text string) bool {
+	return urlRegex.MatchString(text)
+}
+
+func extractFirstURL(text string) string {
+	matches := urlRegex.FindStringSubmatch(text)
+	if len(matches) > 0 {
+		return matches[0]
+	}
+	return ""
+}
+
+// LinkPreviewData holds the preview metadata
+type LinkPreviewData struct {
+	CanonicalURL        string
+	Title               *string
+	Description         *string
+	JPEGThumbnail       []byte
+	ThumbnailDirectPath *string
+	ThumbnailSHA256     []byte
+	ThumbnailEncSHA256  []byte
+	MediaKey            []byte
+	MediaKeyTimestamp   *int64
 }
