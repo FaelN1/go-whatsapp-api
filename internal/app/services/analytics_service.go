@@ -12,7 +12,7 @@ import (
 
 type AnalyticsService interface {
 	TrackSentMessage(ctx context.Context, instanceID, communityJID string, msg message.SendTextOutput, content, mediaURL, caption string) (*analytics.MessageTracking, error)
-	RecordMessageView(ctx context.Context, messageID, viewerJID, viewerName string) error
+	RecordMessageView(ctx context.Context, messageID, viewerJID, viewerName string, viewedAt time.Time) error
 	RecordMessageReaction(ctx context.Context, messageID, reactorJID, reactorName, reaction string) error
 	GetMessageMetrics(ctx context.Context, messageTrackID string) (*analytics.MessageMetrics, error)
 	GetInstanceMetrics(ctx context.Context, instanceID string, limit, offset int) ([]analytics.MessageMetricsSummary, error)
@@ -42,7 +42,7 @@ func (s *analyticsService) TrackSentMessage(ctx context.Context, instanceID, com
 	return s.repo.CreateMessageTracking(ctx, input)
 }
 
-func (s *analyticsService) RecordMessageView(ctx context.Context, messageID, viewerJID, viewerName string) error {
+func (s *analyticsService) RecordMessageView(ctx context.Context, messageID, viewerJID, viewerName string, viewedAt time.Time) error {
 	// Buscar o tracking da mensagem
 	tracking, err := s.repo.GetMessageTracking(ctx, messageID)
 	if err != nil {
@@ -53,11 +53,15 @@ func (s *analyticsService) RecordMessageView(ctx context.Context, messageID, vie
 		return nil
 	}
 
+	if viewedAt.IsZero() {
+		viewedAt = time.Now().UTC()
+	}
+
 	input := analytics.CreateMessageViewInput{
 		MessageTrackID: tracking.ID,
 		ViewerJID:      viewerJID,
 		ViewerName:     viewerName,
-		ViewedAt:       time.Now(),
+		ViewedAt:       viewedAt,
 	}
 
 	_, err = s.repo.CreateMessageView(ctx, input)

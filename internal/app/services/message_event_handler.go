@@ -445,13 +445,47 @@ func (h *MessageEventHandler) HandleReceipt(ctx context.Context, instanceName st
 		return
 	}
 
+	var (
+		sess       *whatsapp.Session
+		viewerName string
+	)
+	if h.waMgr != nil && instanceName != "" {
+		if candidate, ok := h.waMgr.Get(instanceName); ok {
+			sess = candidate
+		}
+	}
+
+	viewerJID := evt.Sender
+
+	if sess != nil && sess.Client != nil && sess.Client.Store != nil && !viewerJID.IsEmpty() {
+		contact, err := sess.Client.Store.Contacts.GetContact(ctx, viewerJID.ToNonAD())
+		if err == nil {
+			switch {
+			case contact.FullName != "":
+				viewerName = contact.FullName
+			case contact.PushName != "":
+				viewerName = contact.PushName
+			case contact.BusinessName != "":
+				viewerName = contact.BusinessName
+			case contact.FirstName != "":
+				viewerName = contact.FirstName
+			}
+		}
+	}
+
+	if viewerName == "" {
+		viewerName = strings.TrimSpace(viewerJID.User)
+	}
+
+	viewedAt := evt.Timestamp
+	if viewedAt.IsZero() {
+		viewedAt = time.Now().UTC()
+	}
+
 	// Processar cada mensagem confirmada
 	for _, msgID := range evt.MessageIDs {
 		// Registrar visualização no analytics
-		viewerJID := evt.Sender.String()
-		viewerName := ""
-
-		if err := h.analyticsService.RecordMessageView(ctx, msgID, viewerJID, viewerName); err != nil {
+		if err := h.analyticsService.RecordMessageView(ctx, msgID, viewerJID.String(), viewerName, viewedAt); err != nil {
 			if h.log != nil {
 				h.log.Warnf("Failed to record message view for %s: %v", msgID, err)
 			}

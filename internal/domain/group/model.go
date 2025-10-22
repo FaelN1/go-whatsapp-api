@@ -43,6 +43,7 @@ type SendInviteInput struct {
 	InstanceID  string   `json:"instanceId"`
 	GroupJID    string   `json:"groupJid"`
 	Description string   `json:"description,omitempty"`
+	Text        string   `json:"text,omitempty"` // Alternative field for description
 	Numbers     []string `json:"numbers"`
 }
 

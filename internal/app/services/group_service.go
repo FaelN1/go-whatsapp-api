@@ -232,7 +232,12 @@ func (s *groupService) SendInvite(ctx context.Context, in group.SendInviteInput)
 		return out, fmt.Errorf("%w: %v", ErrGroupInviteLink, err)
 	}
 
+	// Use Text if Description is empty (Evolution API compatibility)
 	caption := strings.TrimSpace(in.Description)
+	if caption == "" {
+		caption = strings.TrimSpace(in.Text)
+	}
+
 	for _, target := range targets {
 		// Build group invite message with join button
 		inviteMsg := &waE2E.GroupInviteMessage{

@@ -101,6 +101,37 @@ func (c *GroupController) UpdateDescription(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{"group": out})
 }
 
+func (c *GroupController) SendInvite(w http.ResponseWriter, r *http.Request, instanceName string) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	groupJID := strings.TrimSpace(r.URL.Query().Get("groupJid"))
+	if groupJID == "" {
+		groupJID = strings.TrimSpace(r.URL.Query().Get("groupJID"))
+	}
+	if groupJID == "" {
+		writeError(w, http.StatusBadRequest, ErrInvalidParam)
+		return
+	}
+
+	var in group.SendInviteInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	in.InstanceID = instanceName
+	in.GroupJID = groupJID
+
+	out, err := c.service.SendInvite(r.Context(), in)
+	if err != nil {
+		writeError(w, mapGroupStatus(err), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func mapGroupStatus(err error) int {
 	switch {
 	case errors.Is(err, services.ErrGroupInstanceNotFound):

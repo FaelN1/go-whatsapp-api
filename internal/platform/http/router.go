@@ -571,6 +571,7 @@ func NewRouter(cfg RouterConfig) stdhttp.Handler {
 		groupMux.HandleFunc("/group/create/", handleGroup("/group/create/", cfg.GroupCtrl.Create))
 		groupMux.HandleFunc("/group/updateGroupPicture/", handleGroup("/group/updateGroupPicture/", cfg.GroupCtrl.UpdatePicture))
 		groupMux.HandleFunc("/group/updateGroupDescription/", handleGroup("/group/updateGroupDescription/", cfg.GroupCtrl.UpdateDescription))
+		groupMux.HandleFunc("/group/sendInviteUrl/", handleGroup("/group/sendInviteUrl/", cfg.GroupCtrl.SendInvite))
 
 		mux.Handle("/group/", groupMux)
 	}

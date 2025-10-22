@@ -2666,43 +2666,35 @@ components:
           description: Código extraído do convite (ex. ABC123)
     SendInviteRequest:
       type: object
-      required: [numbers, description, caption]
+      required: [numbers]
       properties:
         numbers:
           type: array
           minItems: 1
           items:
             type: string
-          description: Lista de números com DDI ou JIDs completos para receber o convite
+          description: Lista de números com DDI (ex. 5511999999999) ou JIDs completos para receber o convite
+          example: ["5511999999999", "5521988888888"]
+        text:
+          type: string
+          description: Texto personalizado da mensagem de convite (campo alternativo para description)
+          example: "Você foi convidado para o grupo!"
         description:
           type: string
-          description: Texto descritivo do convite
-        caption:
-          type: string
-          description: Legenda adicional da mensagem de convite
+          description: Texto descritivo do convite (compatibilidade Evolution API)
+          example: "Você foi convidado para o grupo!"
     SendInviteResponse:
       type: object
-      required: [sent]
+      required: [send, inviteUrl]
       properties:
-        sent:
-          type: array
-          items:
-            type: object
-            required: [number, status]
-            properties:
-              number:
-                type: string
-                description: Número ou JID do destinatário
-              status:
-                type: string
-                enum: [success, error]
-                description: Status do envio para este destinatário
-              messageId:
-                type: string
-                description: ID da mensagem enviada (presente quando status é success)
-              error:
-                type: string
-                description: Descrição do erro (presente quando status é error)
+        send:
+          type: boolean
+          description: Indica se os convites foram enviados com sucesso
+          example: true
+        inviteUrl:
+          type: string
+          description: URL do link de convite do grupo
+          example: "https://chat.whatsapp.com/ABCxyz123"
     FindParticipantsResponse:
       type: object
       required: [participants]
