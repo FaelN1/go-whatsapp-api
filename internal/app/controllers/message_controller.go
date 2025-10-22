@@ -19,12 +19,36 @@ func NewMessageController(s services.MessageService) *MessageController {
 }
 
 // SendText replica o comportamento Evolution API para mensagens de texto.
+// @Summary Send text message
+// @Description Send a text message with optional link preview (default: true)
+// @Tags Messages
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance ID"
+// @Param body body message.SendTextInput true "Message data"
+// @Success 200 {object} message.SendTextOutput
+// @Router /message/sendText/{instanceId} [post]
 func (c *MessageController) SendText(w http.ResponseWriter, r *http.Request) {
-	var in message.SendTextInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	// Parse as map first to check if linkPreview was explicitly set
+	var raw map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+
+	// Set linkPreview to true by default if not specified
+	if _, exists := raw["linkPreview"]; !exists {
+		raw["linkPreview"] = true
+	}
+
+	// Convert back to struct
+	rawBytes, _ := json.Marshal(raw)
+	var in message.SendTextInput
+	if err := json.Unmarshal(rawBytes, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
 	if !c.bindInstanceID(w, r, &in.InstanceID) {
 		return
 	}
@@ -38,6 +62,15 @@ func (c *MessageController) SendText(w http.ResponseWriter, r *http.Request) {
 }
 
 // SendStatus replica o comportamento Evolution API para status (stories).
+// @Summary Send status (story)
+// @Description Send a status update (WhatsApp story) with text, image, video or audio
+// @Tags Messages
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance ID"
+// @Param body body message.SendStatusInput true "Status data"
+// @Success 200 {object} message.SendTextOutput
+// @Router /message/sendStatus/{instanceId} [post]
 func (c *MessageController) SendStatus(w http.ResponseWriter, r *http.Request) {
 	var in message.SendStatusInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -57,12 +90,36 @@ func (c *MessageController) SendStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // SendMedia replica o comportamento Evolution API para envio de mídia.
+// @Summary Send media message
+// @Description Send image, video, audio or document with optional caption and link preview (default: true)
+// @Tags Messages
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance ID"
+// @Param body body message.SendMediaInput true "Media data"
+// @Success 200 {object} message.SendTextOutput
+// @Router /message/sendMedia/{instanceId} [post]
 func (c *MessageController) SendMedia(w http.ResponseWriter, r *http.Request) {
-	var in message.SendMediaInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	// Parse as map first to check if linkPreview was explicitly set
+	var raw map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+
+	// Set linkPreview to true by default if not specified
+	if _, exists := raw["linkPreview"]; !exists {
+		raw["linkPreview"] = true
+	}
+
+	// Convert back to struct
+	rawBytes, _ := json.Marshal(raw)
+	var in message.SendMediaInput
+	if err := json.Unmarshal(rawBytes, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
 	if !c.bindInstanceID(w, r, &in.InstanceID) {
 		return
 	}
@@ -76,6 +133,15 @@ func (c *MessageController) SendMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 // SendAudio replica o comportamento Evolution API para envio de áudio.
+// @Summary Send audio message
+// @Description Send audio message or voice note (PTT)
+// @Tags Messages
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance ID"
+// @Param body body message.SendAudioInput true "Audio data"
+// @Success 200 {object} message.SendTextOutput
+// @Router /message/sendAudio/{instanceId} [post]
 func (c *MessageController) SendAudio(w http.ResponseWriter, r *http.Request) {
 	var in message.SendAudioInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -95,6 +161,15 @@ func (c *MessageController) SendAudio(w http.ResponseWriter, r *http.Request) {
 }
 
 // SendSticker replica o comportamento Evolution API para envio de figurinha.
+// @Summary Send sticker
+// @Description Send a sticker/animated sticker
+// @Tags Messages
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance ID"
+// @Param body body message.SendStickerInput true "Sticker data"
+// @Success 200 {object} message.SendTextOutput
+// @Router /message/sendSticker/{instanceId} [post]
 func (c *MessageController) SendSticker(w http.ResponseWriter, r *http.Request) {
 	var in message.SendStickerInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -114,6 +189,15 @@ func (c *MessageController) SendSticker(w http.ResponseWriter, r *http.Request) 
 }
 
 // SendLocation replica o comportamento Evolution API para envio de localização.
+// @Summary Send location
+// @Description Send a location with coordinates
+// @Tags Messages
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance ID"
+// @Param body body message.SendLocationInput true "Location data"
+// @Success 200 {object} message.SendTextOutput
+// @Router /message/sendLocation/{instanceId} [post]
 func (c *MessageController) SendLocation(w http.ResponseWriter, r *http.Request) {
 	var in message.SendLocationInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -133,6 +217,15 @@ func (c *MessageController) SendLocation(w http.ResponseWriter, r *http.Request)
 }
 
 // SendContact replica o comportamento Evolution API para envio de contatos.
+// @Summary Send contact
+// @Description Send one or more contact cards
+// @Tags Messages
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance ID"
+// @Param body body message.SendContactInput true "Contact data"
+// @Success 201 {object} message.SendTextOutput
+// @Router /message/sendContact/{instanceId} [post]
 func (c *MessageController) SendContact(w http.ResponseWriter, r *http.Request) {
 	var in message.SendContactInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -152,6 +245,15 @@ func (c *MessageController) SendContact(w http.ResponseWriter, r *http.Request) 
 }
 
 // SendReaction replica o comportamento Evolution API para envio de reações.
+// @Summary Send reaction
+// @Description Add or remove reaction to a message
+// @Tags Messages
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance ID"
+// @Param body body message.SendReactionInput true "Reaction data"
+// @Success 200 {object} message.SendTextOutput
+// @Router /message/sendReaction/{instanceId} [post]
 func (c *MessageController) SendReaction(w http.ResponseWriter, r *http.Request) {
 	var in message.SendReactionInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -171,6 +273,15 @@ func (c *MessageController) SendReaction(w http.ResponseWriter, r *http.Request)
 }
 
 // SendPoll replica o comportamento Evolution API para envio de enquetes.
+// @Summary Send poll
+// @Description Send a poll with multiple options
+// @Tags Messages
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance ID"
+// @Param body body message.SendPollInput true "Poll data"
+// @Success 200 {object} message.SendTextOutput
+// @Router /message/sendPoll/{instanceId} [post]
 func (c *MessageController) SendPoll(w http.ResponseWriter, r *http.Request) {
 	var in message.SendPollInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {

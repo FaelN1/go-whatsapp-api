@@ -634,6 +634,22 @@ paths:
       tags:
         - Messages
       summary: Enviar mensagem de texto (Evolution API compatible)
+      description: |
+        Envia mensagem de texto com suporte a link preview automático.
+        
+        **Link Preview**: Por padrão (linkPreview: true), URLs no texto geram preview rico com:
+        - Título e descrição da página
+        - Thumbnail/imagem de destaque
+        - Metadados Open Graph e Twitter Cards
+        
+        Exemplo com link preview:
+        ```json
+        {
+          "number": "5511999999999",
+          "text": "Confira este artigo: https://example.com/article",
+          "linkPreview": true
+        }
+        ```
       security:
         - bearerAuth: []
       parameters:
@@ -663,6 +679,24 @@ paths:
       tags:
         - Messages
       summary: Enviar mídia (Evolution API compatible)
+      description: |
+        Envia mensagens de mídia (imagem, vídeo, áudio, documento) com suporte a link preview em legendas.
+        
+        Se a legenda (`caption`) contiver URLs, a API gerará automaticamente uma pré-visualização de link (padrão: `linkPreview: true`):
+        - Extração de título, descrição e imagem do link
+        - Suporte a Open Graph e Twitter Cards
+        - Download automático de thumbnails (limite 5MB)
+        
+        Exemplo de uso com link preview:
+        ```json
+        {
+          "number": "5511999999999",
+          "mediatype": "image",
+          "media": "https://example.com/image.jpg",
+          "caption": "Confira este artigo: https://example.com/article",
+          "linkPreview": true
+        }
+        ```
       security:
         - bearerAuth: []
       parameters:
@@ -1130,6 +1164,24 @@ paths:
       tags:
         - Groups
       summary: Enviar link de convite do grupo via mensagem (Evolution API compatible)
+      description: |
+        Envia um link de convite de grupo para os números especificados com **botão de participar interativo**.
+        
+        Esta implementação agora oferece **paridade total com Baileys**, incluindo:
+        - Botão "Participar do Grupo" clicável na mensagem
+        - Pré-visualização do nome do grupo
+        - Envio de mensagem dupla (GroupInviteMessage + ExtendedTextMessage com ContextInfo)
+        - Suporte a GroupMentions para ativar o botão de convite
+        
+        O WhatsApp renderiza automaticamente uma interface rica quando ContextInfo contém GroupMentions.
+        
+        Exemplo de uso:
+        ```json
+        {
+          "numbers": ["5511999999999"],
+          "text": "Você foi convidado para o grupo!"
+        }
+        ```
       security:
         - bearerAuth: []
       parameters:
@@ -2123,7 +2175,8 @@ components:
           description: Delay em milissegundos antes de enviar
         linkPreview:
           type: boolean
-          description: Se deve mostrar preview de links
+          description: 'Habilita preview de links automaticamente (padrão: true). Quando ativo, detecta URLs no texto e gera preview com título, descrição e thumbnail extraídos da página.'
+          default: true
         mentionsEveryOne:
           type: boolean
           description: Mencionar todos no grupo
@@ -2172,6 +2225,8 @@ components:
           description: Delay em milissegundos
         linkPreview:
           type: boolean
+          description: 'Habilita preview de links na legenda (padrão: true)'
+          default: true
         mentionsEveryOne:
           type: boolean
         mentioned:
