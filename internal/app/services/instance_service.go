@@ -134,11 +134,13 @@ func (s *instanceService) List(ctx context.Context) ([]*instance.InstanceListRes
 		sess, _ := s.waMgr.Get(inst.Name)
 		currentState := determineConnectionState(inst, sess)
 
-		// Update status if it changed
+		// Update status if it changed (async to not block response)
 		if inst.Status != currentState {
 			inst.Status = currentState
 			inst.UpdatedAt = time.Now().UTC()
-			_ = s.repo.Update(ctx, inst)
+			go func(i *instance.Instance) {
+				_ = s.repo.Update(context.Background(), i)
+			}(inst)
 		}
 
 		// Build response with Evolution API structure
@@ -157,11 +159,11 @@ func (s *instanceService) List(ctx context.Context) ([]*instance.InstanceListRes
 			UpdatedAt:               inst.UpdatedAt,
 		}
 
-		// Add profile information if available
+		// Add profile information if available (skip expensive network calls)
 		if sess != nil && sess.Client != nil && sess.Client.Store != nil && sess.Client.Store.ID != nil {
 			response.OwnerJID = sess.Client.Store.ID.String()
 
-			// Get profile name from store
+			// Get profile name from store (cached, fast)
 			contact, err := sess.Client.Store.Contacts.GetContact(ctx, sess.Client.Store.ID.ToNonAD())
 			if err == nil {
 				if contact.FullName != "" {
@@ -171,10 +173,8 @@ func (s *instanceService) List(ctx context.Context) ([]*instance.InstanceListRes
 				}
 			}
 
-			// Get profile picture
-			if pic, err := sess.Client.GetProfilePictureInfo(sess.Client.Store.ID.ToNonAD(), nil); err == nil && pic != nil {
-				response.ProfilePicURL = pic.URL
-			}
+			// Skip profile picture fetch in list endpoint - too slow for batch operations
+			// Use the dedicated profile endpoint for individual profile pictures
 		}
 
 		// Add settings details
